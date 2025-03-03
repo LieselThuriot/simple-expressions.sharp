@@ -1,0 +1,36 @@
+<Project>
+	<PropertyGroup>
+		<LangVersion>latest</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Newton Condition="'$(Newton)' == ''">false</Newton>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Newton)' == 'true'">
+		<DefineConstants>$(DefineConstants);Newton</DefineConstants>
+		<JsonType>Newtonsoft.Json</JsonType>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Newton)' != 'true'">
+		<DefineConstants>$(DefineConstants);STJ</DefineConstants>
+		<JsonType>System.Text.Json</JsonType>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Using Alias="SimpleType" Include="Simple.Expressions.Sharp.FluentType&lt;bool, int, string&gt;"/>
+		<Using Alias="ExpressionType" Include="Simple.Expressions.Sharp.FluentType&lt;bool, string&gt;"/>
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Newton)' == 'true'">
+		<Using Alias="JsonObject" Include="Newtonsoft.Json.Linq.JObject"/>
+		<Using Alias="JsonTokenType" Include="Newtonsoft.Json.Linq.JTokenType"/>
+		<Using Alias="ModelType" Include="Simple.Expressions.Sharp.FluentType&lt;Newtonsoft.Json.Linq.JObject, object&gt;"/>
+		<PackageReference Include="Newtonsoft.Json" Version="[13.0.3,)" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Newton)' != 'true'">
+		<Using Alias="JsonObject" Include="System.Text.Json.Nodes.JsonObject"/>
+		<Using Alias="JsonTokenType" Include="System.Text.Json.JsonValueKind"/>
+		<Using Alias="ModelType" Include="Simple.Expressions.Sharp.FluentType&lt;System.Text.Json.Nodes.JsonObject, object&gt;"/>
+		<PackageReference Include="System.Text.Json" Version="[8.0.5,)" />
+	</ItemGroup>
+</Project>
