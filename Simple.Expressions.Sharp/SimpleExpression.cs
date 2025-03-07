@@ -1,4 +1,6 @@
-﻿namespace Simple.Expressions.Sharp;
+﻿using System.Text.RegularExpressions;
+
+namespace Simple.Expressions.Sharp;
 
 public sealed class SimpleExpression
 {
@@ -28,48 +30,42 @@ public sealed class SimpleExpression
         return toReturn;
     }
 
+    private static readonly Regex s_newLineReplacer = new("\r\n|\n|\r", RegexOptions.Compiled);
     public SimpleExpression(ExpressionType expression)
     {
-        if (expression.IsFirst)
-        {
-            _parsedExpression = model => expression.First;
-        }
-        else if (expression.IsSecond)
-        {
-            if (string.IsNullOrEmpty(expression.Second))
+        (_parsedExpression, _needsFlattening) = expression.SwitchCase(
+            static @bool => (model => @bool, false),
+            static @string =>
             {
-                throw new Exception("Invalid Expression: empty");
-            }
+                if (string.IsNullOrEmpty(@string))
+                {
+                    throw new Exception("Invalid Expression: empty");
+                }
 
-            var strExpression = expression.Second.Replace("\r\n", "").Replace("\n", "").Replace("\r", "").Trim();
+                var strExpression = s_newLineReplacer.Replace(@string, "").Trim();
 
-            if (string.IsNullOrEmpty(strExpression))
-            {
-                throw new Exception("Invalid Expression: whitespace");
-            }
+                if (string.IsNullOrEmpty(strExpression))
+                {
+                    throw new Exception("Invalid Expression: whitespace");
+                }
 
-            if (strExpression.Contains('.'))
-            {
-                _needsFlattening = true;
-            }
-
-            _parsedExpression = ExpressionParser.ParseExpression(strExpression);
-        }
-        else
-        {
-            throw new Exception("Invalid Expression: unsupported type " + expression.CurrentType);
-        }
+                return (ExpressionParser.ParseExpression(strExpression), strExpression.Contains('.'));
+            },
+            onMismatch: () => new Exception("Invalid Expression: unsupported type " + expression.CurrentType)
+        );
     }
 
     public bool Evaluate(ModelType model)
     {
-        JsonObject m = model.IsFirst ? model.First :
-
+        JsonObject m = model.SwitchCase(
+            json => json,
+            @object =>
 #if Newton
-           JsonObject.FromObject(model.Second);
+           JsonObject.FromObject(@object);
 #else
-           (JsonObject)System.Text.Json.JsonSerializer.SerializeToNode(model.Second);
+           (JsonObject)System.Text.Json.JsonSerializer.SerializeToNode(@object)
 #endif
+            );
 
         if (_needsFlattening)
         {

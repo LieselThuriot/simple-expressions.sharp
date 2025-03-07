@@ -6,28 +6,20 @@ public class SimpleExpressionsTests
 {
     private readonly JsonObject _emptyModel = [];
 
-    [Fact]
-    public void SimpleTrueResultsInTrue()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SimpleBooleansResultInThemselves(bool value)
     {
-        Assert.True(SE.ExecuteExpression(_emptyModel, true));
+        Assert.Equal(value, SE.ExecuteExpression(_emptyModel, value));
     }
 
-    [Fact]
-    public void SimpleFalseResultsInFalse()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SimpleStringBooleansResultInThemselves(bool value)
     {
-        Assert.False(SE.ExecuteExpression(_emptyModel, false));
-    }
-
-    [Fact]
-    public void TrueResultsInTrue()
-    {
-        Assert.True(SE.ExecuteExpression(_emptyModel, "true"));
-    }
-
-    [Fact]
-    public void FalseResultsInFalse()
-    {
-        Assert.False(SE.ExecuteExpression(_emptyModel, "false"));
+        Assert.Equal(value, SE.ExecuteExpression(_emptyModel, value.ToString()));
     }
 
     [Fact]
@@ -120,42 +112,45 @@ public class SimpleExpressionsTests
         Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"te\\\"\"st\", \"te\\\"\"st\")"));
     }
 
-    [Fact]
-    public void InvalidConstantLocationThrows()
+    [Theory]
+    [InlineData("eq(\"test\", \"test\"\")")]
+    [InlineData("eq(\"test\", \"tes\"t\")")]
+    [InlineData("eq(\"te\"st\", \"test\")")]
+    [InlineData("eq(\"test\"\", \"test\")")]
+    [InlineData("eq(\"te\"\"st\", \"test\")")]
+    [InlineData("eq(\"te\"\"st\", \"test\"\"\"\"\"d\")")]
+    [InlineData("eq(\",\"\",\" \",\")")]
+    [InlineData("eq(\"test\", \"test\\\")")]
+    [InlineData("eq(\"test\\\", \"test\")")]
+    [InlineData("eq(123, \"test\\\" \" \" )")]
+    [InlineData("eq(\"test\\\" \" \", 123 )")]
+    public void InvalidConstantLocationThrows(string expression)
     {
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\", \"test\"\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\", \"tes\"t\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"te\"st\", \"test\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\"\", \"test\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"te\"\"st\", \"test\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"te\"\"st\", \"test\"\"\"\"\"d\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\",\"\",\" \",\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\", \"test\\\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\\\", \"test\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(123, \"test\\\" \" \" )"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\\\" \" \", 123 )"));
+        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, expression));
     }
 
-    [Fact]
-    public void InvalidParametersThrows()
+    [Theory]
+    [InlineData("eq(\"test\", \"test\", \"test\")")]
+    [InlineData("not(\"test\", \"test\")")]
+    public void InvalidParametersThrows(string expression)
     {
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"test\", \"test\", \"test\")"));
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "not(\"test\", \"test\")"));
+        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, expression));
     }
 
-    [Fact]
-    public void ConstantBoundariesAreRespected()
+    [Theory]
+    [InlineData("""AND(eq("te\"st", "te\"st"), not(eq("te,st", "tes,t")))""", true)]
+    [InlineData("""eq("test", "test\", \"test")""", false)]
+    [InlineData("""eq("test\", \"test", "test\", \"test")""", true)]
+    [InlineData("""eq("test", "test', 'test")""", false)]
+    [InlineData("""eq("test', 'test", "test', 'test")""", true)]
+    [InlineData("""not(eq("tru\"e", "tru\"e"))""", false)]
+    [InlineData("""eq(",", ",")""", true)]
+    [InlineData("""eq("\",\"", "\",\"")""", true)]
+    [InlineData("""eq("','", "','")""", true)]
+    [InlineData("""eq(123, "test\"" )""", false)]
+    public void ConstantBoundariesAreRespected(string expression, bool expected)
     {
-        Assert.True(SE.ExecuteExpression(_emptyModel, """AND(eq("te\"st", "te\"st"), not(eq("te,st", "tes,t")))"""));
-        Assert.False(SE.ExecuteExpression(_emptyModel, """eq("test", "test\", \"test")"""));
-        Assert.True(SE.ExecuteExpression(_emptyModel, """eq("test\", \"test", "test\", \"test")"""));
-        Assert.False(SE.ExecuteExpression(_emptyModel, """eq("test", "test', 'test")"""));
-        Assert.True(SE.ExecuteExpression(_emptyModel, """eq("test', 'test", "test', 'test")"""));
-        Assert.False(SE.ExecuteExpression(_emptyModel, """not(eq("tru\"e", "tru\"e"))"""));
-        Assert.True(SE.ExecuteExpression(_emptyModel, """eq(",", ",")"""));
-        Assert.True(SE.ExecuteExpression(_emptyModel, """eq("\",\"", "\",\"")"""));
-        Assert.True(SE.ExecuteExpression(_emptyModel, """eq("','", "','")"""));
-        Assert.False(SE.ExecuteExpression(_emptyModel, """eq(123, "test\"" )"""));
+        Assert.Equal(expected, SE.ExecuteExpression(_emptyModel, expression));
     }
 
     [Fact]
@@ -210,18 +205,26 @@ public class SimpleExpressionsTests
         Assert.True(SE.ExecuteExpression(new JsonObject { ["pattern1"] = "hello", ["pattern2"] = "there", ["test"] = "hello over there" }, "match(#test, concat(concat(concat(concat(\"(\", #pattern1), \")(?! \"), #pattern2), \")\"))"));
     }
 
-    [Fact]
-    public void CanTestInputLengths()
+    [Theory]
+    [InlineData("hello", "lt(len(#test), 10)", true)]
+    [InlineData("hello", "gt(len(#test), 10)", false)]
+    [InlineData("hello", "eq(len(#test), 5)", true)]
+    [InlineData("hello", "len(#test)", true)]
+    [InlineData("", "len(#test)", false)]
+    [InlineData("", "eq(len(#test), 0)", true)]
+    public void CanTestInputLengths(string testValue, string expression, bool expected)
     {
-        Assert.True(SE.ExecuteExpression(new JsonObject { ["test"] = "hello" }, "lt(len(#test), 10)"));
-        Assert.False(SE.ExecuteExpression(new JsonObject { ["test"] = "hello" }, "gt(len(#test), 10)"));
-        Assert.True(SE.ExecuteExpression(new JsonObject { ["test"] = "hello" }, "eq(len(#test), 5)"));
-        Assert.True(SE.ExecuteExpression(new JsonObject { ["test"] = "hello" }, "len(#test)"));
-        Assert.False(SE.ExecuteExpression(new JsonObject { ["test"] = "" }, "len(#test)"));
-        Assert.True(SE.ExecuteExpression(new JsonObject { ["test"] = "" }, "eq(len(#test), 0)"));
-        Assert.False(SE.ExecuteExpression(_emptyModel, "len(#test)"));
-        Assert.True(SE.ExecuteExpression(_emptyModel, "eq(len(#test), 0)"));
-        Assert.False(SE.ExecuteExpression(_emptyModel, "eq(len(\"test\"), 2)"));
-        Assert.True(SE.ExecuteExpression(_emptyModel, "eq(len(\"test\"), 4)"));
+        var model = new JsonObject { ["test"] = testValue };
+        Assert.Equal(expected, SE.ExecuteExpression(model, expression));
+    }
+
+    [Theory]
+    [InlineData("len(#test)", false)]
+    [InlineData("eq(len(#test), 0)", true)]
+    [InlineData("eq(len(\"test\"), 2)", false)]
+    [InlineData("eq(len(\"test\"), 4)", true)]
+    public void CanTestInputLengthsOnEmpty(string expression, bool expected)
+    {
+        Assert.Equal(expected, SE.ExecuteExpression(_emptyModel, expression));
     }
 }

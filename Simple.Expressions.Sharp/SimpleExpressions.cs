@@ -16,16 +16,6 @@ public static class SimpleExpressions
     {
         return Get(expression).Evaluate(model);
     }
-    
-    public static bool ExecuteExpression(this JsonObject model, ExpressionType expression)
-    {
-        return ExecuteExpression(model, expression);
-    }
-
-    public static bool ExecuteExpression(this object model, ExpressionType expression)
-    {
-        return ExecuteExpression(model, expression);
-    }
 
     public static SimpleExpression Get(ExpressionType e)
     {

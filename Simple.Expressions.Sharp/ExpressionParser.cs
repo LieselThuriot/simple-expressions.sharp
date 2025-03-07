@@ -5,74 +5,28 @@ namespace Simple.Expressions.Sharp;
 
 internal static class ExpressionParser
 {
-    public static bool Falsy(this SimpleType value)
-    {
-        if (value.IsFirst)
-        {
-            return value.First;
-        }
-
-        if (value.IsSecond)
-        {
-            return value.Second is not 0;
-        }
-
-        if (value.IsThird)
-        {
-            return !string.IsNullOrEmpty(value.Third);
-        }
-
-        return false;
-    }
+    public static bool Falsy(this SimpleType value) => value.SwitchCaseOrDefault(
+        static @bool => @bool,
+        static @int => @int is not 0,
+        static @string => !string.IsNullOrEmpty(@string)
+    );
 
     private static bool Equals(SimpleType value1, SimpleType value2)
     {
         return value1 == value2;
     }
 
-    private static bool GreaterThan(SimpleType value1, SimpleType value2)
-    {
-        if (value1.IsFirst && value2.IsFirst)
-        {
-            var int1 = value1.First ? 1 : 0;
-            var int2 = value2.First ? 1 : 0;
-            return int1 > int2;
-        }
+    private static bool GreaterThan(SimpleType value1, SimpleType value2) => value1.SwitchCase(
+        bool1 => value2.SwitchCaseOrDefault(first: bool2 => (bool1 ? 1 : 0) > (bool2 ? 1 : 0)),
+        int1 => value2.SwitchCaseOrDefault(second: int2 => int1 > int2),
+        string1 => value2.SwitchCaseOrDefault(third: string2 => StringComparer.Ordinal.Compare(string1, string2) > 0)
+    );
 
-        if (value1.IsSecond && value2.IsSecond)
-        {
-            return value1.Second > value2.Second;
-        }
-
-        if (value1.IsThird && value2.IsThird)
-        {
-            return StringComparer.Ordinal.Compare(value1.Third, value2.Third) > 0;
-        }
-
-        return false;
-    }
-
-    private static bool LessThan(SimpleType value1, SimpleType value2)
-    {
-        if (value1.IsFirst && value2.IsFirst)
-        {
-            var int1 = value1.First ? 1 : 0;
-            var int2 = value2.First ? 1 : 0;
-            return int1 < int2;
-        }
-
-        if (value1.IsSecond && value2.IsSecond)
-        {
-            return value1.Second < value2.Second;
-        }
-
-        if (value1.IsThird && value2.IsThird)
-        {
-            return StringComparer.Ordinal.Compare(value1.Third, value2.Third) < 0;
-        }
-
-        return false;
-    }
+    private static bool LessThan(SimpleType value1, SimpleType value2) => value1.SwitchCase(
+        bool1 => value2.SwitchCaseOrDefault(first: bool2 => (bool1 ? 1 : 0) < (bool2 ? 1 : 0)),
+        int1 => value2.SwitchCaseOrDefault(second: int2 => int1 < int2),
+        string1 => value2.SwitchCaseOrDefault(third: string2 => StringComparer.Ordinal.Compare(string1, string2) < 0)
+    );
 
     private static bool Contains(SimpleType value1, SimpleType value2)
     {

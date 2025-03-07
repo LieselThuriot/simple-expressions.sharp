@@ -77,6 +77,35 @@ public readonly struct FluentType<TFirst, TSecond> : IEquatable<FluentType<TFirs
 
     public static implicit operator TFirst(FluentType<TFirst, TSecond> of) => of.IsFirst ? of.First : throw new InvalidCastException();
     public static implicit operator TSecond(FluentType<TFirst, TSecond> of) => of.IsSecond ? of.Second : throw new InvalidCastException();
+
+    public T SwitchCase<T>(Func<TFirst, T> first = null, Func<TSecond, T> second = null, Func<T> @else = null, Func<Exception> onMismatch = null) => _currentType switch
+    {
+        FluentTypes.First when first is not null => first(First),
+        FluentTypes.Second when second is not null => second(Second),
+        _ when @else is not null => @else(),
+        _ => throw (onMismatch?.Invoke() ?? new InvalidOperationException())
+    };
+
+    public T SwitchCaseOrDefault<T>(Func<TFirst, T> first = null, Func<TSecond, T> second = null, T @default = default) => _currentType switch
+    {
+        FluentTypes.First when first is not null => first(First),
+        FluentTypes.Second when second is not null => second(Second),
+        _ => @default
+    };
+
+    public FluentType<T, TSecond> WithFirst<T>(Func<TFirst, T> value) => _currentType switch
+    {
+        FluentTypes.First => new(value(First)),
+        FluentTypes.Second => new(Second),
+        _ => default
+    };
+
+    public FluentType<TFirst, T> WithSecond<T>(Func<TSecond, T> value) => _currentType switch
+    {
+        FluentTypes.Second => new(value(Second)),
+        FluentTypes.First => new(First),
+        _ => default
+    };
 }
 
 public readonly struct FluentType<TFirst, TSecond, TThird> : IEquatable<FluentType<TFirst, TSecond, TThird>>
@@ -169,6 +198,47 @@ public readonly struct FluentType<TFirst, TSecond, TThird> : IEquatable<FluentTy
     public static implicit operator TFirst(FluentType<TFirst, TSecond, TThird> of) => of.IsFirst ? of.First : throw new InvalidCastException();
     public static implicit operator TSecond(FluentType<TFirst, TSecond, TThird> of) => of.IsSecond ? of.Second : throw new InvalidCastException();
     public static implicit operator TThird(FluentType<TFirst, TSecond, TThird> of) => of.IsThird ? of.Third : throw new InvalidCastException();
+
+    public T SwitchCase<T>(Func<TFirst, T> first = null, Func<TSecond, T> second = null, Func<TThird, T> third = null, Func<T> @else = null, Func<Exception> onMismatch = null) => _currentType switch
+    {
+        FluentTypes.First when first is not null => first(First),
+        FluentTypes.Second when second is not null => second(Second),
+        FluentTypes.Third when third is not null => third(Third),
+        _ when @else is not null => @else(),
+        _ => throw (onMismatch?.Invoke() ?? new InvalidOperationException())
+    };
+
+    public T SwitchCaseOrDefault<T>(Func<TFirst, T> first = null, Func<TSecond, T> second = null, Func<TThird, T> third = null, T @default = default) => _currentType switch
+    {
+        FluentTypes.First when first is not null => first(First),
+        FluentTypes.Second when second is not null => second(Second),
+        FluentTypes.Third when third is not null => third(Third),
+        _ => @default
+    };
+
+    public FluentType<T, TSecond, TThird> WithFirst<T>(Func<TFirst, T> value) => _currentType switch
+    {
+        FluentTypes.First => new(value(First)),
+        FluentTypes.Second => new(Second),
+        FluentTypes.Third => new(Third),
+        _ => default
+    };
+
+    public FluentType<TFirst, T, TThird> WithSecond<T>(Func<TSecond, T> value) => _currentType switch
+    {
+        FluentTypes.Second => new(value(Second)),
+        FluentTypes.First => new(First),
+        FluentTypes.Third => new(Third),
+        _ => default
+    };
+
+    public FluentType<TFirst, TSecond, T> WithThird<T>(Func<TThird, T> value) => _currentType switch
+    {
+        FluentTypes.Third => new(value(Third)),
+        FluentTypes.First => new(First),
+        FluentTypes.Second => new(Second),
+        _ => default
+    };
 }
 
 internal static class HashCodeCalculator
