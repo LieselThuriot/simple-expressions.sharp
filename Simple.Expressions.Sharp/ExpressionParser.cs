@@ -72,6 +72,8 @@ internal sealed class ExpressionParser
                     return Constant(ExpressionValue.From(true));
                 if (identifier.Equals("false", StringComparison.OrdinalIgnoreCase))
                     return Constant(ExpressionValue.From(false));
+                if (identifier.Equals("null", StringComparison.OrdinalIgnoreCase))
+                    return Constant(ExpressionValue.Null);
                 return ParseCall(identifier);
             }
             default:
@@ -269,6 +271,8 @@ internal sealed class ExpressionParser
             };
         if ((left.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null) && (right.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null))
             return true;
+        if (left.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || right.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
+            return false;
         if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
             return LooseEquals(ExpressionValue.From(left.ToJavaScriptString()), right);
         if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)

@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="Simple.Expressions.Sharp.Tests.Newton/Simple.Expressions.Sharp.Tests.Newton.csproj" />
+  <Project Path="Simple.Expressions.Sharp.Tests/Simple.Expressions.Sharp.Tests.csproj" />
+  <Project Path="Simple.Expressions.Sharp/Simple.Expressions.Sharp.csproj" />
+</Solution>

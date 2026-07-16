@@ -30,9 +30,9 @@ Operators are case-insensitive:
 
 The evaluator follows JavaScript truthiness, loose equality, and value conversion semantics where the .NET value model permits. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable.
 
-## JSON
+## JSON Backends
 
-System.Text.Json supports direct `JsonObject` values and POCO input.
+System.Text.Json is the default build. Build with `-p:Newton=true` for Newtonsoft.Json. Both variants support direct JSON objects and POCO input.
 
 ## Caching
 

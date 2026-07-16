@@ -74,6 +74,10 @@ public class UpstreamParityTests
     {
         Assert.True(SE.ExecuteExpression(new { }, "eq(1, \"1\")"));
         Assert.True(SE.ExecuteExpression(new { }, "eq(false, 0)"));
+        Assert.False(SE.ExecuteExpression(new { }, "eq(null, false)"));
+        Assert.False(SE.ExecuteExpression(new { }, "eq(null, 0)"));
+        Assert.False(SE.ExecuteExpression(new { }, "eq(#missing, false)"));
+        Assert.False(SE.ExecuteExpression(new { }, "eq(#missing, 0)"));
         Assert.True(SE.ExecuteExpression(new { }, "gt(10, 2)"));
         Assert.True(SE.ExecuteExpression(new { }, "empty(#missing)"));
         Assert.False(SE.ExecuteExpression(new { value = 0 }, "empty(#value)"));

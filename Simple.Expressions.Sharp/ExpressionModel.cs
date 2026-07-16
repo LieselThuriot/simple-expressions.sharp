@@ -19,7 +19,11 @@ internal sealed class ExpressionModel
         if (model is JsonObject json)
             return new ExpressionModel(json);
 
+#if Newton
+        return new ExpressionModel(Newtonsoft.Json.Linq.JObject.FromObject(model));
+#else
         return new ExpressionModel(System.Text.Json.JsonSerializer.SerializeToNode(model) as JsonObject);
+#endif
     }
 
     public ExpressionValue Resolve(string path)
@@ -46,6 +50,19 @@ internal sealed class ExpressionModel
 
     public static bool TryGetOwnLength(object value, out ExpressionValue length)
     {
+#if Newton
+        if (value is Newtonsoft.Json.Linq.JArray array)
+        {
+            length = ExpressionValue.From((double)array.Count);
+            return true;
+        }
+
+        if (value is JsonObject obj && TryGetProperty(obj, "length", out var property))
+        {
+            length = Convert(property);
+            return true;
+        }
+#else
         if (value is System.Text.Json.Nodes.JsonArray array)
         {
             length = ExpressionValue.From((double)array.Count);
@@ -57,6 +74,7 @@ internal sealed class ExpressionModel
             length = Convert(property);
             return true;
         }
+#endif
 
         length = default;
         return false;
@@ -64,18 +82,31 @@ internal sealed class ExpressionModel
 
     public static string ArrayToString(object value)
     {
+#if Newton
+        if (value is Newtonsoft.Json.Linq.JArray array)
+            return string.Join(",", array.Select(item => item is null ? string.Empty : Convert(item).Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : Convert(item).ToJavaScriptString()));
+#else
         if (value is System.Text.Json.Nodes.JsonArray array)
             return string.Join(",", array.Select(item => item is null ? string.Empty : Convert(item).Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : Convert(item).ToJavaScriptString()));
+#endif
         return string.Empty;
     }
 
     private static bool TryGetProperty(object value, string name, out object? property)
     {
+#if Newton
+        if (value is JsonObject obj && obj.TryGetValue(name, out var token))
+        {
+            property = token;
+            return true;
+        }
+#else
         if (value is System.Text.Json.Nodes.JsonObject obj && obj.TryGetPropertyValue(name, out var node))
         {
             property = node;
             return true;
         }
+#endif
         property = null;
         return false;
     }
@@ -85,6 +116,22 @@ internal sealed class ExpressionModel
         if (value is null)
             return ExpressionValue.Null;
 
+#if Newton
+        if (value is Newtonsoft.Json.Linq.JArray array)
+            return ExpressionValue.FromArray(array);
+        if (value is JsonObject obj)
+            return ExpressionValue.FromObject(obj);
+
+        var token = (Newtonsoft.Json.Linq.JValue)value;
+        return token.Type switch
+        {
+            JsonTokenType.Null => ExpressionValue.Null,
+            JsonTokenType.Boolean => ExpressionValue.From(token.Value is true),
+            JsonTokenType.Integer or JsonTokenType.Float => ExpressionValue.From(GetNumber(token)),
+            JsonTokenType.String => ExpressionValue.From((string)token.Value!),
+            _ => ExpressionValue.Null,
+        };
+#else
         if (value is System.Text.Json.Nodes.JsonArray array)
             return ExpressionValue.FromArray(array);
         if (value is System.Text.Json.Nodes.JsonObject obj)
@@ -100,8 +147,12 @@ internal sealed class ExpressionModel
             System.Text.Json.JsonValueKind.String => ExpressionValue.From(node.GetValue<string>()!),
             _ => ExpressionValue.Null,
         };
+#endif
     }
 
+#if Newton
+    private static double GetNumber(Newtonsoft.Json.Linq.JValue value) => value.ToObject<double>();
+#else
     private static double GetNumber(System.Text.Json.Nodes.JsonValue value)
     {
         if (value.TryGetValue<double>(out var doubleValue)) return doubleValue;
@@ -110,4 +161,5 @@ internal sealed class ExpressionModel
         if (value.TryGetValue<ulong>(out var ulongValue)) return ulongValue;
         return value.GetValue<int>();
     }
+#endif
 }
