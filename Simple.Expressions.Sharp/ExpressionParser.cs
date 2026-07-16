@@ -1,414 +1,414 @@
-﻿using System.Collections;
+#nullable enable
+
 using System.Text.RegularExpressions;
 
 namespace Simple.Expressions.Sharp;
 
-internal static class ExpressionParser
+internal delegate ExpressionValue Evaluator(ExpressionModel model);
+
+internal enum TokenKind
 {
-    public static bool Falsy(this SimpleType value) => value.SwitchCaseOrDefault(
-        static @bool => @bool,
-        static @int => @int is not 0,
-        static @string => !string.IsNullOrEmpty(@string)
-    );
+    End,
+    Identifier,
+    Number,
+    String,
+    Reference,
+    OpenParen,
+    CloseParen,
+    Comma,
+}
 
-    private static bool Equals(SimpleType value1, SimpleType value2)
+internal sealed class ExpressionParser
+{
+    private static readonly HashSet<string> UnsafeReferenceSegments = new(StringComparer.Ordinal)
     {
-        return value1 == value2;
+        "__proto__", "constructor", "prototype",
+    };
+
+    private static readonly Regex NumberPattern = new(@"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$", RegexOptions.CultureInvariant);
+    private readonly Tokenizer _tokenizer;
+
+    public ExpressionParser(string expression)
+    {
+        _tokenizer = new Tokenizer(expression);
     }
 
-    private static bool GreaterThan(SimpleType value1, SimpleType value2) => value1.SwitchCase(
-        bool1 => value2.SwitchCaseOrDefault(first: bool2 => (bool1 ? 1 : 0) > (bool2 ? 1 : 0)),
-        int1 => value2.SwitchCaseOrDefault(second: int2 => int1 > int2),
-        string1 => value2.SwitchCaseOrDefault(third: string2 => StringComparer.Ordinal.Compare(string1, string2) > 0)
-    );
-
-    private static bool LessThan(SimpleType value1, SimpleType value2) => value1.SwitchCase(
-        bool1 => value2.SwitchCaseOrDefault(first: bool2 => (bool1 ? 1 : 0) < (bool2 ? 1 : 0)),
-        int1 => value2.SwitchCaseOrDefault(second: int2 => int1 < int2),
-        string1 => value2.SwitchCaseOrDefault(third: string2 => StringComparer.Ordinal.Compare(string1, string2) < 0)
-    );
-
-    private static bool Contains(SimpleType value1, SimpleType value2)
+    public Evaluator Parse()
     {
-        var stringValue1 = value1.ToString();
-        var stringValue2 = value2.ToString();
-
-        return stringValue1 is not null &&
-               stringValue2 is not null &&
-               stringValue1.IndexOf(stringValue2, StringComparison.OrdinalIgnoreCase) >= 0;
+        var result = ParseValue();
+        if (_tokenizer.Kind != TokenKind.End)
+            Fail("unexpected trailing input");
+        return result;
     }
 
-    private static bool Not(SimpleType value)
+    private Evaluator ParseValue()
     {
-        return !value.Falsy();
-    }
-
-    private static bool Or(SimpleType value1, SimpleType value2)
-    {
-        return value1.Falsy() || value2.Falsy();
-    }
-
-    private static bool And(SimpleType value1, SimpleType value2)
-    {
-        return value1.Falsy() && value2.Falsy();
-    }
-
-    private static bool Empty(SimpleType value)
-    {
-        return value.IsThird && string.IsNullOrEmpty(value.Third);
-    }
-
-    private static Func<JsonObject, SimpleType> ParseSingleBody(string value)
-    {
-        value = value.Trim();
-
-        if (value.StartsWith("("))
+        switch (_tokenizer.Kind)
         {
-            value = value.Substring(1);
-        }
-
-        if (value.EndsWith(")"))
-        {
-            value = value.Substring(0, value.Length - 1);
-        }
-
-        return InnerParseExpression(value.Trim());
-    }
-
-    private static Func<JsonObject, SimpleType> ParseNot(string value)
-    {
-        var inner = ParseSingleBody(value);
-        return model => Not(inner(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseEmpty(string value)
-    {
-        var inner = ParseSingleBody(value);
-        return model => Empty(inner(model));
-    }
-
-    private static (Func<JsonObject, SimpleType> left, Func<JsonObject, SimpleType> right) ResolveParameters(string value)
-    {
-        int bracketCount = 0;
-        char? constantStart = null;
-        bool canConstantStart = true;
-
-        for (int i = 0; i < value.Length; i++)
-        {
-            switch (value[i])
+            case TokenKind.String:
             {
-                case '(':
-                    if (!constantStart.HasValue)
-                    {
-                        bracketCount++;
-                    }
+                var value = _tokenizer.Value;
+                _tokenizer.Next();
+                return Constant(ExpressionValue.From(value));
+            }
+            case TokenKind.Number:
+            {
+                var value = double.Parse(_tokenizer.Value, System.Globalization.CultureInfo.InvariantCulture);
+                _tokenizer.Next();
+                return Constant(ExpressionValue.From(value));
+            }
+            case TokenKind.Reference:
+            {
+                var path = _tokenizer.Value;
+                ValidateReference(path);
+                _tokenizer.Next();
+                return model => model.Resolve(path);
+            }
+            case TokenKind.Identifier:
+            {
+                var identifier = _tokenizer.Value;
+                _tokenizer.Next();
+                if (identifier.Equals("true", StringComparison.OrdinalIgnoreCase))
+                    return Constant(ExpressionValue.From(true));
+                if (identifier.Equals("false", StringComparison.OrdinalIgnoreCase))
+                    return Constant(ExpressionValue.From(false));
+                return ParseCall(identifier);
+            }
+            default:
+                Fail("expected an expression");
+                return null!;
+        }
+    }
 
-                    break;
-                case ')':
-                    if (!constantStart.HasValue)
-                    {
-                        bracketCount--;
-                    }
+    private Evaluator ParseCall(string name)
+    {
+        if (_tokenizer.Kind != TokenKind.OpenParen)
+            Fail("invalid operator: " + name);
 
-                    break;
-                case '`':
-                case '"':
-                case '\'':
-                    if (!constantStart.HasValue)
-                    {
-                        if (canConstantStart)
-                        {
-                            constantStart = value[i];
-                            canConstantStart = false;
-                        }
-                        else
-                        {
-                            throw new Exception("Invalid Expression: invalid constant start: " + value);
-                        }
-                    }
-                    else if (constantStart.HasValue && constantStart.GetValueOrDefault() == value[i])
-                    {
-                        int backslashCount = 0;
-                        int backslashIndex = i - 1;
-                        while (backslashIndex >= 0 && value[backslashIndex] == '\\')
-                        {
-                            backslashCount++;
-                            backslashIndex--;
-                        }
+        var operation = name.ToLowerInvariant();
+        var arity = GetArity(operation);
+        _tokenizer.Next();
+        if (_tokenizer.Kind == TokenKind.CloseParen)
+            Fail("missing operator argument");
 
-                        if (backslashCount % 2 == 0)
-                        {
-                            constantStart = null;
-                        }
-                    }
-
-                    break;
-                case ',':
-                    if (!constantStart.HasValue)
-                    {
-                        if (bracketCount == 1)
-                        {
-                            var leftBody = value.Substring(1, i - 1);
-                            var left = InnerParseExpression(leftBody);
-
-                            var rightBody = value.Substring(i + 1).Trim();
-                            if (rightBody[rightBody.Length - 1] != ')')
-                            {
-                                throw new Exception("Invalid Expression: missing closing bracket: " + rightBody);
-                            }
-
-                            var right = InnerParseExpression(rightBody.Substring(0, rightBody.Length - 1));
-
-                            return (left, right);
-                        }
-
-                        canConstantStart = true;
-                    }
-
-                    break;
+        var arguments = new List<Evaluator> { ParseValue() };
+        if (arity == -1)
+        {
+            if (_tokenizer.Kind != TokenKind.Comma)
+                Fail("operator " + name + " expects at least two arguments");
+            while (_tokenizer.Kind == TokenKind.Comma)
+            {
+                _tokenizer.Next();
+                arguments.Add(ParseValue());
+            }
+        }
+        else
+        {
+            while (arguments.Count < arity)
+            {
+                if (_tokenizer.Kind != TokenKind.Comma)
+                    Fail("operator " + name + " expects " + ArityText(arity) + " arguments");
+                _tokenizer.Next();
+                arguments.Add(ParseValue());
             }
         }
 
-        throw new Exception("Invalid Expression Part: " + value);
+        if (_tokenizer.Kind != TokenKind.CloseParen)
+            Fail("operator " + name + " expects " + (arity == -1 ? "at least two" : ArityText(arity)) + " arguments");
+        _tokenizer.Next();
+        return Compile(operation, arguments);
     }
 
-    private static Func<JsonObject, SimpleType> ParseEquals(string value)
+    private int GetArity(string operation)
     {
-        var (left, right) = ResolveParameters(value);
-        return model => Equals(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseOr(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => Or(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseAnd(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => And(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseContains(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => Contains(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseGreaterThan(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => GreaterThan(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseLessThan(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => LessThan(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseRegex(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => EvaluateRegex(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseConcat(string value)
-    {
-        var (left, right) = ResolveParameters(value);
-        return model => Concat(left(model), right(model));
-    }
-
-    private static Func<JsonObject, SimpleType> ParseOperator(string operatorName, string body)
-    {
-        if (string.IsNullOrEmpty(operatorName))
+        return operation switch
         {
-            throw new Exception("Invalid Expression: no operator");
-        }
-
-        return operatorName.ToLowerInvariant() switch
-        {
-            "not" => ParseNot(body),
-            "eq" => ParseEquals(body),
-            "or" => ParseOr(body),
-            "and" => ParseAnd(body),
-            "contains" => ParseContains(body),
-            "gt" => ParseGreaterThan(body),
-            "lt" => ParseLessThan(body),
-            "empty" => ParseEmpty(body),
-            "len" => ParseLength(body),
-            "match" => ParseRegex(body),
-            "concat" => ParseConcat(body),
-            _ => throw new Exception("Invalid Operator: " + operatorName),
+            "not" or "empty" or "len" or "lower" or "upper" => 1,
+            "eq" or "contains" or "startswith" or "endswith" or "gt" or "lt" or "match" => 2,
+            "if" => 3,
+            "and" or "or" or "concat" => -1,
+            _ => FailArity(operation),
         };
     }
 
-    private static readonly Regex OperatorRegex = new(@"^([a-zA-Z]+)\s*(\(.+?\))$", RegexOptions.Compiled);
-
-    private static Func<JsonObject, SimpleType> Parse(string value)
+    private int FailArity(string operation)
     {
-        if (value.Length > 1)
-        {
-            char firstChar = value[0];
-            switch (firstChar)
-            {
-                case '#':
-                    value = value.Substring(1);
-                    return model =>
-                    {
-                        var token = model[value];
-
-                        if (token is null)
-                        {
-                            return "";
-                        }
-
-#if Newton
-                        return token.Type switch
-                        {
-                            JsonTokenType.String => token.ToString(),
-                            JsonTokenType.Integer => token.ToObject<int>(),
-                            JsonTokenType.Boolean => token.ToObject<bool>(),
-                            _ => throw new InvalidOperationException("Unsupported JToken type"),
-                        };
-#else
-                        return token.GetValueKind() switch
-                        {
-                            JsonTokenType.String => token.GetValue<string>(),
-                            JsonTokenType.Number => token.GetValue<int>(),
-                            JsonTokenType.True => true,
-                            JsonTokenType.False => false,
-                            _ => throw new InvalidOperationException("Unsupported JToken type"),
-                        };
-#endif
-                    };
-                case '`':
-                case '"':
-                case '\'':
-                    if (value[value.Length - 1] == firstChar)
-                    {
-                        value = value.Substring(1, value.Length - 2);
-                        string escapeCheckPattern = "(?:\\\\)*" + firstChar;
-
-                        {
-                            var matches = Regex.Matches(value, escapeCheckPattern);
-                            foreach (Match match in matches)
-                            {
-                                int backslashCount = match.Value.Length - 1;
-                                if (backslashCount % 2 == 0)
-                                {
-                                    throw new Exception("Invalid Expression: invalid escaped constant: " + value);
-                                }
-                            }
-                        }
-
-                        {
-                            var match = Regex.Match(value, @"(?:\\)+$");
-                            if (match.Success)
-                            {
-                                int backslashCount = match.Value.Length;
-                                if (backslashCount % 2 != 0)
-                                {
-                                    throw new Exception("Invalid Expression: escaped constant ending: " + value);
-                                }
-                            }
-                        }
-
-                        return model => value;
-                    }
-
-                    throw new Exception("Invalid Expression: end quotes don't match starting quotes for constant: " + value);
-            }
-
-            switch (value.ToLowerInvariant())
-            {
-                case "true":
-                    return model => true;
-                case "false":
-                    return model => false;
-            }
-
-            var operatorMatch = OperatorRegex.Match(value);
-            if (operatorMatch.Success)
-            {
-                var operatorName = operatorMatch.Groups[1].Value;
-                var body = operatorMatch.Groups[2].Value;
-
-                return ParseOperator(operatorName, body);
-            }
-        }
-
-        if (int.TryParse(value, out var numericValue))
-        {
-            return model => numericValue;
-        }
-
-        throw new Exception("Invalid Expression: invalid constant format: " + value);
+        Fail("invalid operator: " + operation);
+        return 0;
     }
 
-    private static Func<JsonObject, SimpleType> InnerParseExpression(string expression)
+    private Evaluator Compile(string operation, List<Evaluator> arguments)
     {
-        return SimpleExpressions.GetParsedExpression(expression, Parse);
-    }
-
-    public static Func<JsonObject, SimpleType> ParseExpression(string expression)
-    {
-        return InnerParseExpression(expression);
-    }
-
-    private static bool EvaluateRegex(SimpleType value, SimpleType pattern)
-    {
-        if (value.IsThird && pattern.IsThird && !string.IsNullOrEmpty(pattern.Third))
+        return operation switch
         {
-            var stringValue = value.Third ?? string.Empty;
-            return Regex.IsMatch(stringValue, pattern.Third, RegexOptions.IgnoreCase);
+            "not" => model => ExpressionValue.From(!arguments[0](model).IsTruthy()),
+            "empty" => model => ExpressionValue.From(IsEmpty(arguments[0](model))),
+            "len" => model => Length(arguments[0](model)),
+            "lower" => model => ExpressionValue.From(ToFalsyString(arguments[0](model)).ToLowerInvariant()),
+            "upper" => model => ExpressionValue.From(ToFalsyString(arguments[0](model)).ToUpperInvariant()),
+            "eq" => model => ExpressionValue.From(LooseEquals(arguments[0](model), arguments[1](model))),
+            "contains" => model => ExpressionValue.From(Contains(arguments[0](model), arguments[1](model))),
+            "startswith" => model => ExpressionValue.From(StartsWith(arguments[0](model), arguments[1](model))),
+            "endswith" => model => ExpressionValue.From(EndsWith(arguments[0](model), arguments[1](model))),
+            "gt" => model => ExpressionValue.From(Compare(arguments[0](model), arguments[1](model)) > 0),
+            "lt" => model => ExpressionValue.From(Compare(arguments[0](model), arguments[1](model)) < 0),
+            "match" => CompileMatch(arguments[0], arguments[1]),
+            "and" => model => EvaluateAnd(arguments, model),
+            "or" => model => EvaluateOr(arguments, model),
+            "concat" => CompileConcat(arguments),
+            "if" => model => arguments[0](model).IsTruthy() ? arguments[1](model) : arguments[2](model),
+            _ => throw new InvalidOperationException("Unknown operator: " + operation),
+        };
+    }
+
+    private static Evaluator CompileMatch(Evaluator input, Evaluator pattern)
+    {
+        if (TryGetConstant(pattern, out var constant) && constant.Kind == ExpressionValueKind.String && constant.IsTruthy())
+        {
+            var regex = new Regex((string)constant.Value!, RegexOptions.CultureInvariant);
+            return model => ExpressionValue.From(regex.IsMatch(ToFalsyString(input(model))));
         }
 
+        return model =>
+        {
+            var runtimePattern = pattern(model);
+            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && new Regex((string)runtimePattern.Value!, RegexOptions.CultureInvariant).IsMatch(ToFalsyString(input(model))));
+        };
+    }
+
+    private static ExpressionValue EvaluateAnd(List<Evaluator> arguments, ExpressionModel model)
+    {
+        foreach (var argument in arguments)
+        {
+            if (!argument(model).IsTruthy())
+                return ExpressionValue.From(false);
+        }
+        return ExpressionValue.From(true);
+    }
+
+    private static ExpressionValue EvaluateOr(List<Evaluator> arguments, ExpressionModel model)
+    {
+        foreach (var argument in arguments)
+        {
+            if (argument(model).IsTruthy())
+                return ExpressionValue.From(true);
+        }
+        return ExpressionValue.From(false);
+    }
+
+    private static ExpressionValue EvaluateConcat(List<Evaluator> arguments, ExpressionModel model)
+    {
+        var result = string.Empty;
+        foreach (var argument in arguments)
+        {
+            var value = argument(model);
+            if (value.IsTruthy())
+                result += value.ToJavaScriptString();
+        }
+        return ExpressionValue.From(result);
+    }
+
+    private static Evaluator CompileConcat(List<Evaluator> arguments)
+    {
+        var constants = new ExpressionValue[arguments.Count];
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (!TryGetConstant(arguments[index], out constants[index]))
+                return model => EvaluateConcat(arguments, model);
+        }
+
+        var result = string.Empty;
+        foreach (var value in constants)
+        {
+            if (value.IsTruthy())
+                result += value.ToJavaScriptString();
+        }
+        return Constant(ExpressionValue.From(result));
+    }
+
+    private static Evaluator Constant(ExpressionValue value) => new ConstantEvaluator(value).Evaluate;
+    private static bool TryGetConstant(Evaluator evaluator, out ExpressionValue value)
+    {
+        if (evaluator.Target is ConstantEvaluator constant)
+        {
+            value = constant.Value;
+            return true;
+        }
+
+        value = default;
         return false;
     }
 
-    private static string Concat(SimpleType value1, SimpleType value2)
+    private static bool IsEmpty(ExpressionValue value) => value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || value.Kind == ExpressionValueKind.String && ((string)value.Value!).Length == 0;
+    private static string ToFalsyString(ExpressionValue value) => value.IsTruthy() ? value.ToJavaScriptString() : string.Empty;
+    private static bool Contains(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).IndexOf(right.ToJavaScriptString(), StringComparison.Ordinal) >= 0;
+    private static bool StartsWith(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).StartsWith(right.ToJavaScriptString(), StringComparison.Ordinal);
+    private static bool EndsWith(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).EndsWith(right.ToJavaScriptString(), StringComparison.Ordinal);
+
+    private static ExpressionValue Length(ExpressionValue value)
     {
-        return "" + value1 + value2;
+        if (value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
+            return ExpressionValue.From(0d);
+        if (value.Kind == ExpressionValueKind.String)
+            return ExpressionValue.From((double)((string)value.Value!).Length);
+        if ((value.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object) && ExpressionModel.TryGetOwnLength(value.Value!, out var length))
+            return length;
+        throw new InvalidOperationException("Input does not have a length");
     }
 
-    private static Func<JsonObject, SimpleType> ParseLength(string value)
+    private static bool LooseEquals(ExpressionValue left, ExpressionValue right)
     {
-        var inner = ParseSingleBody(value);
-        return model => Len(inner(model));
-    }
-
-    private static int Len(object value)
-    {
-        if (value is null)
-        {
-            return 0;
-        }
-
-        if (value is string str)
-        {
-            return str.Length;
-        }
-
-        if (value is IEnumerable enumerable)
-        {
-            var enumerator = enumerable.GetEnumerator();
-
-            int count = 0;
-            while (enumerator.MoveNext())
+        if (left.Kind == right.Kind)
+            return left.Kind switch
             {
-                count++;
+                ExpressionValueKind.Missing or ExpressionValueKind.Null => true,
+                ExpressionValueKind.Boolean => (bool)left.Value! == (bool)right.Value!,
+                ExpressionValueKind.Number => (double)left.Value! == (double)right.Value!,
+                ExpressionValueKind.String => (string)left.Value! == (string)right.Value!,
+                _ => ReferenceEquals(left.Value, right.Value),
+            };
+        if ((left.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null) && (right.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null))
+            return true;
+        if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+            return LooseEquals(ExpressionValue.From(left.ToJavaScriptString()), right);
+        if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+            return LooseEquals(left, ExpressionValue.From(right.ToJavaScriptString()));
+        if (left.Kind == ExpressionValueKind.Boolean || right.Kind == ExpressionValueKind.Boolean || left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String || left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number)
+            return left.ToNumber() == right.ToNumber();
+        return false;
+    }
+
+    private static int Compare(ExpressionValue left, ExpressionValue right)
+    {
+        if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+            left = ExpressionValue.From(left.ToJavaScriptString());
+        if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+            right = ExpressionValue.From(right.ToJavaScriptString());
+        if (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.String)
+            return string.CompareOrdinal((string)left.Value!, (string)right.Value!);
+        var leftNumber = left.ToNumber();
+        var rightNumber = right.ToNumber();
+        return double.IsNaN(leftNumber) || double.IsNaN(rightNumber) ? 0 : leftNumber.CompareTo(rightNumber);
+    }
+
+    private static void ValidateReference(string path)
+    {
+        foreach (var segment in path.Split('.'))
+        {
+            if (segment.Length == 0 || UnsafeReferenceSegments.Contains(segment))
+                throw new ExpressionParseException("invalid model reference: #" + path, 0);
+        }
+    }
+
+    private static string ArityText(int arity) => arity switch { 1 => "one", 2 => "two", _ => "three" };
+    private void Fail(string message) => throw new ExpressionParseException(message, _tokenizer.Position);
+
+    private sealed class ConstantEvaluator
+    {
+        public ConstantEvaluator(ExpressionValue value) => Value = value;
+        public ExpressionValue Value { get; }
+        public ExpressionValue Evaluate(ExpressionModel _) => Value;
+    }
+
+    private sealed class Tokenizer
+    {
+        private readonly string _source;
+        private int _index;
+
+        public Tokenizer(string source)
+        {
+            _source = source;
+            Next();
+        }
+
+        public TokenKind Kind { get; private set; }
+        public string Value { get; private set; } = string.Empty;
+        public int Position => _index;
+
+        public void Next()
+        {
+            while (_index < _source.Length && _source[_index] <= ' ')
+                _index++;
+            if (_index == _source.Length)
+            {
+                Kind = TokenKind.End;
+                Value = string.Empty;
+                return;
             }
 
-            return count;
+            var start = _index;
+            switch (_source[_index])
+            {
+                case '(' : Set(TokenKind.OpenParen, "(", 1); return;
+                case ')' : Set(TokenKind.CloseParen, ")", 1); return;
+                case ',' : Set(TokenKind.Comma, ",", 1); return;
+                case '#':
+                    _index++;
+                    ReadDelimited();
+                    if (_index == start + 1) Fail("missing model reference");
+                    Kind = TokenKind.Reference;
+                    Value = _source.Substring(start + 1, _index - start - 1);
+                    return;
+                case '`':
+                case '\'':
+                case '"': ReadString(_source[_index]); return;
+            }
+
+            if (IsIdentifierLetter(_source[_index]))
+            {
+                _index++;
+                while (_index < _source.Length && IsIdentifierLetter(_source[_index])) _index++;
+                Kind = TokenKind.Identifier;
+                Value = _source.Substring(start, _index - start);
+                return;
+            }
+
+            ReadDelimited();
+            Value = _source.Substring(start, _index - start);
+            if (NumberPattern.IsMatch(Value))
+            {
+                Kind = TokenKind.Number;
+                return;
+            }
+            Fail("unexpected token " + Value);
         }
 
-        if (value is SimpleType simple && simple.IsThird)
+        private void ReadDelimited()
         {
-            return simple.Third.Length;
+            while (_index < _source.Length && _source[_index] is not '(' and not ')' and not ',' && _source[_index] > ' ')
+                _index++;
         }
 
-        throw new Exception("Input does not have a length");
+        private void ReadString(char quote)
+        {
+            var start = ++_index;
+            var slashCount = 0;
+            while (_index < _source.Length)
+            {
+                var character = _source[_index];
+                if (character == '\\') { slashCount++; _index++; continue; }
+                if (character == quote && slashCount % 2 == 0)
+                {
+                    Kind = TokenKind.String;
+                    Value = _source.Substring(start, _index - start);
+                    _index++;
+                    return;
+                }
+                slashCount = 0;
+                _index++;
+            }
+            Fail("unterminated string");
+        }
+
+        private void Set(TokenKind kind, string value, int length)
+        {
+            Kind = kind;
+            Value = value;
+            _index += length;
+        }
+
+        private static bool IsIdentifierLetter(char character) => character is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
+
+        private void Fail(string message) => throw new ExpressionParseException(message, _index);
     }
 }

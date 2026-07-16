@@ -109,7 +109,7 @@ public class SimpleExpressionsTests
     [Fact]
     public void TooManyQuotesThrows()
     {
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"te\\\"\"st\", \"te\\\"\"st\")"));
+        Assert.ThrowsAny<Exception>(() => SE.ExecuteExpression(_emptyModel, "eq(\"te\\\"\"st\", \"te\\\"\"st\")"));
     }
 
     [Theory]
@@ -126,7 +126,7 @@ public class SimpleExpressionsTests
     [InlineData("eq(\"test\\\" \" \", 123 )")]
     public void InvalidConstantLocationThrows(string expression)
     {
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, expression));
+        Assert.ThrowsAny<Exception>(() => SE.ExecuteExpression(_emptyModel, expression));
     }
 
     [Theory]
@@ -134,7 +134,7 @@ public class SimpleExpressionsTests
     [InlineData("not(\"test\", \"test\")")]
     public void InvalidParametersThrows(string expression)
     {
-        Assert.Throws<Exception>(() => SE.ExecuteExpression(_emptyModel, expression));
+        Assert.ThrowsAny<Exception>(() => SE.ExecuteExpression(_emptyModel, expression));
     }
 
     [Theory]

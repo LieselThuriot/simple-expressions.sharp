@@ -16,10 +16,6 @@
 		<PackageIcon>simple-expressions.jpeg</PackageIcon>
 	</PropertyGroup>
 	
-	<Target Name="DisplayMessages" BeforeTargets="Build">
-		<Message Importance="High" Text="Building with Json DLL = $(JsonType)" />
-	</Target>
-	
 	<ItemGroup>
 	  <None Include="..\README.md">
 	    <Pack>True</Pack>

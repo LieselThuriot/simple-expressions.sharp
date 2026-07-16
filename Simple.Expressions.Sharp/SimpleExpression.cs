@@ -1,77 +1,32 @@
-﻿using System.Text.RegularExpressions;
+#nullable enable
 
 namespace Simple.Expressions.Sharp;
 
 public sealed class SimpleExpression
 {
-    private readonly Func<JsonObject, SimpleType> _parsedExpression;
+    private readonly Evaluator _evaluator;
 
-    private readonly bool _needsFlattening = false;
-
-    private JsonObject FlattenObject(JsonObject ob)
-    {
-        JsonObject toReturn = new();
-
-        foreach (var kvp in ob)
-        {
-            if (kvp.Value is JsonObject nestedDict)
-            {
-                foreach (var nestedKvp in FlattenObject(nestedDict))
-                {
-                    toReturn[kvp.Key + "." + nestedKvp.Key] = nestedKvp.Value.DeepClone();
-                }
-            }
-            else
-            {
-                toReturn[kvp.Key] = kvp.Value.DeepClone();
-            }
-        }
-
-        return toReturn;
-    }
-
-    private static readonly Regex s_newLineReplacer = new("\r\n|\n|\r", RegexOptions.Compiled);
     public SimpleExpression(ExpressionType expression)
     {
-        (_parsedExpression, _needsFlattening) = expression.SwitchCase(
-            static @bool => (model => @bool, false),
-            static @string =>
-            {
-                if (string.IsNullOrEmpty(@string))
-                {
-                    throw new Exception("Invalid Expression: empty");
-                }
-
-                var strExpression = s_newLineReplacer.Replace(@string, "").Trim();
-
-                if (string.IsNullOrEmpty(strExpression))
-                {
-                    throw new Exception("Invalid Expression: whitespace");
-                }
-
-                return (ExpressionParser.ParseExpression(strExpression), strExpression.Contains('.'));
-            },
-            onMismatch: () => new Exception("Invalid Expression: unsupported type " + expression.CurrentType)
+        _evaluator = expression.SwitchCase(
+            static value => _ => ExpressionValue.From(value),
+            static expression => SimpleExpressions.GetParsedExpression(expression, static value => new ExpressionParser(value).Parse()),
+            onMismatch: static () => new ArgumentException("Expression must be a Boolean or string.")
         );
+    }
+
+    internal SimpleExpression(Evaluator evaluator)
+    {
+        _evaluator = evaluator;
     }
 
     public bool Evaluate(ModelType model)
     {
-        JsonObject m = model.SwitchCase(
-            json => json,
-            @object =>
-#if Newton
-           JsonObject.FromObject(@object);
-#else
-           (JsonObject)System.Text.Json.JsonSerializer.SerializeToNode(@object)
-#endif
-            );
-
-        if (_needsFlattening)
-        {
-            m = FlattenObject(m);
-        }
-
-        return _parsedExpression(m).Falsy();
+        var input = model.SwitchCase<object?>(static json => json, static value => value);
+        return _evaluator(ExpressionModel.From(input)).IsTruthy();
     }
+
+    public bool Evaluate(object? model) => _evaluator(ExpressionModel.From(model)).IsTruthy();
+
+    public object? EvaluateValue(object? model) => _evaluator(ExpressionModel.From(model)).ToPublicValue();
 }
