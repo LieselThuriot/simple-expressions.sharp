@@ -1,6 +1,6 @@
-﻿using SE = Simple.Expressions.Sharp.SimpleExpressions;
+﻿using SE = Simple.Expressions.SimpleExpressions;
 
-namespace Simple.Expressions.Sharp.Tests;
+namespace Simple.Expressions.Tests;
 
 public class SimpleExpressionsTests
 {

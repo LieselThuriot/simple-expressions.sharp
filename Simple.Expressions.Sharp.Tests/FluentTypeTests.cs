@@ -1,4 +1,4 @@
-﻿namespace Simple.Expressions.Sharp.Tests;
+﻿namespace Simple.Expressions.Tests;
 
 public class FluentTypeTests
 {

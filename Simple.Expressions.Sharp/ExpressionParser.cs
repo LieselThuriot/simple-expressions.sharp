@@ -2,7 +2,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Simple.Expressions.Sharp;
+namespace Simple.Expressions;
 
 internal delegate ExpressionValue Evaluator(ExpressionModel model);
 

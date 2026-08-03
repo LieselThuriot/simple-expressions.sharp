@@ -1,4 +1,4 @@
-﻿namespace Simple.Expressions.Sharp;
+﻿namespace Simple.Expressions;
 
 internal enum FluentTypes
 {

@@ -1,6 +1,6 @@
 #nullable enable
 
-namespace Simple.Expressions.Sharp;
+namespace Simple.Expressions;
 
 internal sealed class ExpressionModel
 {

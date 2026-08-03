@@ -1,7 +1,7 @@
-using Simple.Expressions.Sharp;
-using SE = Simple.Expressions.Sharp.SimpleExpressions;
+using Simple.Expressions;
+using SE = Simple.Expressions.SimpleExpressions;
 
-namespace Simple.Expressions.Sharp.Tests;
+namespace Simple.Expressions.Tests;
 
 public class UpstreamParityTests
 {
