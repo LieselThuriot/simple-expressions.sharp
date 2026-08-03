@@ -16,6 +16,8 @@ internal enum TokenKind
     OpenParen,
     CloseParen,
     Comma,
+    OpenBracket,
+    CloseBracket,
 }
 
 internal sealed class ExpressionParser
@@ -64,6 +66,8 @@ internal sealed class ExpressionParser
                 _tokenizer.Next();
                 return model => model.Resolve(path);
             }
+            case TokenKind.OpenBracket:
+                return ParseList();
             case TokenKind.Identifier:
             {
                 var identifier = _tokenizer.Value;
@@ -80,6 +84,28 @@ internal sealed class ExpressionParser
                 Fail("expected an expression");
                 return null!;
         }
+    }
+
+    private Evaluator ParseList()
+    {
+        _tokenizer.Next();
+        if (_tokenizer.Kind == TokenKind.CloseBracket)
+        {
+            _tokenizer.Next();
+            return _ => ExpressionValue.FromArray(Array.Empty<ExpressionValue>());
+        }
+
+        var values = new List<Evaluator> { ParseValue() };
+        while (_tokenizer.Kind == TokenKind.Comma)
+        {
+            _tokenizer.Next();
+            values.Add(ParseValue());
+        }
+
+        if (_tokenizer.Kind != TokenKind.CloseBracket)
+            Fail("expected closing bracket");
+        _tokenizer.Next();
+        return model => ExpressionValue.FromArray(values.Select(value => value(model)).ToArray());
     }
 
     private Evaluator ParseCall(string name)
@@ -125,8 +151,8 @@ internal sealed class ExpressionParser
     {
         return operation switch
         {
-            "not" or "empty" or "len" or "lower" or "upper" => 1,
-            "eq" or "contains" or "startswith" or "endswith" or "gt" or "lt" or "match" => 2,
+            "not" or "empty" or "len" or "lower" or "upper" or "trim" or "defined" => 1,
+            "eq" or "contains" or "startswith" or "endswith" or "gt" or "lt" or "match" or "in" => 2,
             "if" => 3,
             "and" or "or" or "concat" => -1,
             _ => FailArity(operation),
@@ -148,10 +174,13 @@ internal sealed class ExpressionParser
             "len" => model => Length(arguments[0](model)),
             "lower" => model => ExpressionValue.From(ToFalsyString(arguments[0](model)).ToLowerInvariant()),
             "upper" => model => ExpressionValue.From(ToFalsyString(arguments[0](model)).ToUpperInvariant()),
+            "trim" => model => Trim(arguments[0](model)),
+            "defined" => model => ExpressionValue.From(arguments[0](model).Kind is not (ExpressionValueKind.Missing or ExpressionValueKind.Null)),
             "eq" => model => ExpressionValue.From(LooseEquals(arguments[0](model), arguments[1](model))),
             "contains" => model => ExpressionValue.From(Contains(arguments[0](model), arguments[1](model))),
             "startswith" => model => ExpressionValue.From(StartsWith(arguments[0](model), arguments[1](model))),
             "endswith" => model => ExpressionValue.From(EndsWith(arguments[0](model), arguments[1](model))),
+            "in" => model => ExpressionValue.From(In(arguments[0](model), arguments[1](model))),
             "gt" => model => ExpressionValue.From(Compare(arguments[0](model), arguments[1](model)) > 0),
             "lt" => model => ExpressionValue.From(Compare(arguments[0](model), arguments[1](model)) < 0),
             "match" => CompileMatch(arguments[0], arguments[1]),
@@ -243,9 +272,17 @@ internal sealed class ExpressionParser
 
     private static bool IsEmpty(ExpressionValue value) => value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || value.Kind == ExpressionValueKind.String && ((string)value.Value!).Length == 0;
     private static string ToFalsyString(ExpressionValue value) => value.IsTruthy() ? value.ToJavaScriptString() : string.Empty;
+    private static ExpressionValue Trim(ExpressionValue value)
+    {
+        if (value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
+            return value;
+        return ExpressionValue.From(ToFalsyString(value).Trim());
+    }
+
     private static bool Contains(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).IndexOf(right.ToJavaScriptString(), StringComparison.Ordinal) >= 0;
     private static bool StartsWith(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).StartsWith(right.ToJavaScriptString(), StringComparison.Ordinal);
     private static bool EndsWith(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).EndsWith(right.ToJavaScriptString(), StringComparison.Ordinal);
+    private static bool In(ExpressionValue value, ExpressionValue list) => ExpressionModel.TryGetArrayValues(list, out var values) && values.Any(item => LooseEquals(value, item));
 
     private static ExpressionValue Length(ExpressionValue value)
     {
@@ -346,6 +383,8 @@ internal sealed class ExpressionParser
                 case '(' : Set(TokenKind.OpenParen, "(", 1); return;
                 case ')' : Set(TokenKind.CloseParen, ")", 1); return;
                 case ',' : Set(TokenKind.Comma, ",", 1); return;
+                case '[' : Set(TokenKind.OpenBracket, "[", 1); return;
+                case ']' : Set(TokenKind.CloseBracket, "]", 1); return;
                 case '#':
                     _index++;
                     ReadDelimited();
@@ -379,7 +418,7 @@ internal sealed class ExpressionParser
 
         private void ReadDelimited()
         {
-            while (_index < _source.Length && _source[_index] is not '(' and not ')' and not ',' && _source[_index] > ' ')
+            while (_index < _source.Length && _source[_index] is not '(' and not ')' and not ',' and not '[' and not ']' && _source[_index] > ' ')
                 _index++;
         }
 

@@ -50,6 +50,12 @@ internal sealed class ExpressionModel
 
     public static bool TryGetOwnLength(object value, out ExpressionValue length)
     {
+        if (value is IReadOnlyCollection<ExpressionValue> expressionValues)
+        {
+            length = ExpressionValue.From((double)expressionValues.Count);
+            return true;
+        }
+
 #if Newton
         if (value is Newtonsoft.Json.Linq.JArray array)
         {
@@ -80,8 +86,43 @@ internal sealed class ExpressionModel
         return false;
     }
 
+    public static bool TryGetArrayValues(ExpressionValue value, out IEnumerable<ExpressionValue> values)
+    {
+        if (value.Kind != ExpressionValueKind.Array)
+        {
+            values = Enumerable.Empty<ExpressionValue>();
+            return false;
+        }
+
+        if (value.Value is IReadOnlyList<ExpressionValue> expressionValues)
+        {
+            values = expressionValues;
+            return true;
+        }
+
+#if Newton
+        if (value.Value is Newtonsoft.Json.Linq.JArray newtonArray)
+        {
+            values = newtonArray.Select(Convert);
+            return true;
+        }
+#else
+        if (value.Value is System.Text.Json.Nodes.JsonArray systemTextJsonArray)
+        {
+            values = systemTextJsonArray.Select(Convert);
+            return true;
+        }
+#endif
+
+        values = Enumerable.Empty<ExpressionValue>();
+        return false;
+    }
+
     public static string ArrayToString(object value)
     {
+        if (value is IReadOnlyList<ExpressionValue> expressionValues)
+            return string.Join(",", expressionValues.Select(item => item.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : item.ToJavaScriptString()));
+
 #if Newton
         if (value is Newtonsoft.Json.Linq.JArray array)
             return string.Join(",", array.Select(item => item is null ? string.Empty : Convert(item).Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : Convert(item).ToJavaScriptString()));

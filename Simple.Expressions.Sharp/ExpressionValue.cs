@@ -32,6 +32,7 @@ internal readonly struct ExpressionValue
     public static ExpressionValue From(double value) => new(ExpressionValueKind.Number, value);
     public static ExpressionValue From(string value) => new(ExpressionValueKind.String, value);
     public static ExpressionValue FromArray(object value) => new(ExpressionValueKind.Array, value);
+    public static ExpressionValue FromArray(IReadOnlyList<ExpressionValue> value) => new(ExpressionValueKind.Array, value);
     public static ExpressionValue FromObject(object value) => new(ExpressionValueKind.Object, value);
 
     public bool IsTruthy() => Kind switch
@@ -67,6 +68,7 @@ internal readonly struct ExpressionValue
     {
         ExpressionValueKind.Missing or ExpressionValueKind.Null => null,
         ExpressionValueKind.Boolean or ExpressionValueKind.Number or ExpressionValueKind.String => Value,
+        ExpressionValueKind.Array when Value is IReadOnlyList<ExpressionValue> values => values.Select(value => value.ToPublicValue()).ToArray(),
         _ => Value,
     };
 

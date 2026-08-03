@@ -70,6 +70,45 @@ public class UpstreamParityTests
     }
 
     [Fact]
+    public void InSupportsLiteralAndModelListsWithLooseEquality()
+    {
+        Assert.True(SE.ExecuteExpression(new { }, "in(1, [\"1\", 2])"));
+        Assert.True(SE.ExecuteExpression(new { }, "in(false, [0, true])"));
+        Assert.False(SE.ExecuteExpression(new { }, "in(\"yes\", [])"));
+        Assert.True(SE.ExecuteExpression(new { value = "yes", allowed = new[] { "yes", "no" } }, "in(#value, #allowed)"));
+        Assert.True(SE.ExecuteExpression(new { }, "in(\"yes\", [lower(\"YES\"), #missing])"));
+        Assert.False(SE.ExecuteExpression(new { }, "in(\"yes\", \"yes\")"));
+    }
+
+    [Fact]
+    public void ListLiteralsEvaluateNestedExpressionsAndPreserveValues()
+    {
+        var expression = SE.ParseExpression("[1, lower(\"YES\"), [true, 2]]");
+
+        Assert.Equal(new object[] { 1d, "yes", new object[] { true, 2d } }, expression(new { }));
+        Assert.True(SE.ExecuteExpression(new { }, "eq(len([1, 2, 3]), 3)"));
+    }
+
+    [Fact]
+    public void TrimPreservesNullishValuesAndConvertsOtherValues()
+    {
+        Assert.Equal("hello world", SE.ParseExpression("trim(\"  hello world  \")")(new { }));
+        Assert.Equal("123", SE.ParseExpression("trim(123)")(new { }));
+        Assert.Equal("", SE.ParseExpression("trim(false)")(new { }));
+        Assert.Null(SE.ParseExpression("trim(null)")(new { }));
+        Assert.Null(SE.ParseExpression("trim(#missing)")(new { }));
+    }
+
+    [Fact]
+    public void DefinedOnlyRejectsNullAndMissingValues()
+    {
+        Assert.True(SE.ExecuteExpression(new { }, "defined(\"\")"));
+        Assert.True(SE.ExecuteExpression(new { value = 0 }, "DEFINED(#value)"));
+        Assert.False(SE.ExecuteExpression(new { value = (object?)null }, "defined(#value)"));
+        Assert.False(SE.ExecuteExpression(new { }, "defined(#missing)"));
+    }
+
+    [Fact]
     public void JavaScriptComparisonAndValueSemanticsArePreserved()
     {
         Assert.True(SE.ExecuteExpression(new { }, "eq(1, \"1\")"));

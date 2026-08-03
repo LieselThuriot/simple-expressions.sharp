@@ -1,6 +1,17 @@
-# simple-expressions.sharp
+# simple-expressions
+
+![simple-expressions logo](https://raw.githubusercontent.com/LieselThuriot/simple-expressions.sharp/main/simple-expressions.png)
+
+[![NuGet](https://img.shields.io/nuget/v/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
+[![license](https://img.shields.io/nuget/l/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
 
 C# port of [simple-expressions](https://github.com/LieselThuriot/simple-expressions), aligned with its current expression grammar and evaluation semantics.
+
+## Install
+
+```bash
+dotnet add package simple-expressions
+```
 
 ## Usage
 
@@ -20,13 +31,19 @@ evaluator(model);
 
 `ExecuteExpression` and `SimpleExpression.Evaluate` return expression truthiness. `ParseExpression` returns a reusable evaluator and preserves scalar results. A missing or JSON-null value is represented as `null` at the public API boundary.
 
+## Demo
+
+Try the interactive playground at [lieselthuriot.github.io/simple-expressions](https://lieselthuriot.github.io/simple-expressions/). The demo showcases the shared expression grammar and evaluation behavior.
+
 ## Syntax
 
-Constants support case-insensitive Booleans, signed/decimal/exponent numeric literals, and single-, double-, or backtick-quoted strings. References begin with `#`; dotted references first check for an exact dotted key, then traverse nested object properties. Empty segments and `__proto__`, `constructor`, and `prototype` are rejected.
+Constants support case-insensitive Booleans, signed/decimal/exponent numeric literals, single-, double-, or backtick-quoted strings, and recursive list literals in square brackets. References begin with `#`; dotted references first check for an exact dotted key, then traverse nested object properties. Empty segments and `__proto__`, `constructor`, and `prototype` are rejected.
 
 Operators are case-insensitive:
 
-`not`, `empty`, `len`, `lower`, `upper`, `eq`, `contains`, `startswith`, `endswith`, `gt`, `lt`, `match`, variadic `and`/`or`/`concat`, and lazy `if`.
+`not`, `empty`, `len`, `lower`, `upper`, `trim`, `defined`, `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, variadic `and`/`or`/`concat`, and lazy `if`.
+
+`in` requires a list and uses the same loose equality as `eq`. `trim` preserves null and missing values and converts other falsey values to empty strings before trimming. `defined` is false only for null and missing values. Lists can contain nested lists, model references, and operator expressions.
 
 The evaluator follows JavaScript truthiness, loose equality, and value conversion semantics where the .NET value model permits. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable.
 

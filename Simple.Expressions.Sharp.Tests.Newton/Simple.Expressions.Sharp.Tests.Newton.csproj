@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <Compile Include="..\Simple.Expressions.Sharp.Tests\UpstreamParityTests.cs" Link="UpstreamParityTests.cs" />
+    <Compile Include="..\Simple.Expressions.Sharp.Tests\SimpleExpressionsTests.cs" Link="SimpleExpressionsTests.cs" />
+    <Compile Include="..\Simple.Expressions.Sharp.Tests\FluentTypeTests.cs" Link="FluentTypeTests.cs" />
     <Compile Include="..\Simple.Expressions.Sharp\*.cs" LinkBase="Source" />
     <Using Include="Xunit" />
   </ItemGroup>
