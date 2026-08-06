@@ -118,6 +118,29 @@ internal sealed class ExpressionModel
         return false;
     }
 
+    public static bool TryGetObjectEntries(ExpressionValue value, out IEnumerable<KeyValuePair<string, ExpressionValue>> entries)
+    {
+        if (value.Kind == ExpressionValueKind.Object)
+        {
+#if Newton
+            if (value.Value is JsonObject newtonObject)
+            {
+                entries = newtonObject.Properties().Select(property => new KeyValuePair<string, ExpressionValue>(property.Name, Convert(property.Value)));
+                return true;
+            }
+#else
+            if (value.Value is System.Text.Json.Nodes.JsonObject systemTextJsonObject)
+            {
+                entries = systemTextJsonObject.Select(property => new KeyValuePair<string, ExpressionValue>(property.Key, Convert(property.Value)));
+                return true;
+            }
+#endif
+        }
+
+        entries = Enumerable.Empty<KeyValuePair<string, ExpressionValue>>();
+        return false;
+    }
+
     public static string ArrayToString(object value)
     {
         if (value is IReadOnlyList<ExpressionValue> expressionValues)

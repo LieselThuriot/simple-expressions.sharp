@@ -76,8 +76,6 @@ internal sealed class ExpressionParser
                     return Constant(ExpressionValue.From(true));
                 if (identifier.Equals("false", StringComparison.OrdinalIgnoreCase))
                     return Constant(ExpressionValue.From(false));
-                if (identifier.Equals("null", StringComparison.OrdinalIgnoreCase))
-                    return Constant(ExpressionValue.Null);
                 return ParseCall(identifier);
             }
             default:
@@ -92,7 +90,7 @@ internal sealed class ExpressionParser
         if (_tokenizer.Kind == TokenKind.CloseBracket)
         {
             _tokenizer.Next();
-            return _ => ExpressionValue.FromArray(Array.Empty<ExpressionValue>());
+            return Constant(ExpressionValue.FromArray(Array.Empty<ExpressionValue>()));
         }
 
         var values = new List<Evaluator> { ParseValue() };
@@ -135,14 +133,14 @@ internal sealed class ExpressionParser
             while (arguments.Count < arity)
             {
                 if (_tokenizer.Kind != TokenKind.Comma)
-                    Fail("operator " + name + " expects " + ArityText(arity) + " arguments");
+                    Fail("operator " + name + " expects " + ArityText(arity));
                 _tokenizer.Next();
                 arguments.Add(ParseValue());
             }
         }
 
         if (_tokenizer.Kind != TokenKind.CloseParen)
-            Fail("operator " + name + " expects " + (arity == -1 ? "at least two" : ArityText(arity)) + " arguments");
+            Fail("operator " + name + " expects " + (arity == -1 ? "at least two arguments" : ArityText(arity)));
         _tokenizer.Next();
         return Compile(operation, arguments);
     }
@@ -295,7 +293,11 @@ internal sealed class ExpressionParser
         throw new InvalidOperationException("Input does not have a length");
     }
 
-    private static bool LooseEquals(ExpressionValue left, ExpressionValue right)
+    private const int MaxStructuralDepth = 64;
+
+    private static bool LooseEquals(ExpressionValue left, ExpressionValue right) => LooseEquals(left, right, 0);
+
+    private static bool LooseEquals(ExpressionValue left, ExpressionValue right, int depth)
     {
         if (left.Kind == right.Kind)
             return left.Kind switch
@@ -304,7 +306,8 @@ internal sealed class ExpressionParser
                 ExpressionValueKind.Boolean => (bool)left.Value! == (bool)right.Value!,
                 ExpressionValueKind.Number => (double)left.Value! == (double)right.Value!,
                 ExpressionValueKind.String => (string)left.Value! == (string)right.Value!,
-                _ => ReferenceEquals(left.Value, right.Value),
+                ExpressionValueKind.Array => StructuralArrayEquals(left, right, depth),
+                _ => StructuralObjectEquals(left, right, depth),
             };
         if ((left.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null) && (right.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null))
             return true;
@@ -317,6 +320,50 @@ internal sealed class ExpressionParser
         if (left.Kind == ExpressionValueKind.Boolean || right.Kind == ExpressionValueKind.Boolean || left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String || left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number)
             return left.ToNumber() == right.ToNumber();
         return false;
+    }
+
+    private static bool StructuralArrayEquals(ExpressionValue left, ExpressionValue right, int depth)
+    {
+        if (ReferenceEquals(left.Value, right.Value))
+            return true;
+        if (depth >= MaxStructuralDepth)
+            return false;
+        if (!ExpressionModel.TryGetArrayValues(left, out var leftValues) || !ExpressionModel.TryGetArrayValues(right, out var rightValues))
+            return false;
+
+        using var leftEnumerator = leftValues.GetEnumerator();
+        using var rightEnumerator = rightValues.GetEnumerator();
+        while (leftEnumerator.MoveNext())
+        {
+            if (!rightEnumerator.MoveNext() || !LooseEquals(leftEnumerator.Current, rightEnumerator.Current, depth + 1))
+                return false;
+        }
+
+        return !rightEnumerator.MoveNext();
+    }
+
+    private static bool StructuralObjectEquals(ExpressionValue left, ExpressionValue right, int depth)
+    {
+        if (ReferenceEquals(left.Value, right.Value))
+            return true;
+        if (depth >= MaxStructuralDepth)
+            return false;
+        if (!ExpressionModel.TryGetObjectEntries(left, out var leftEntries) || !ExpressionModel.TryGetObjectEntries(right, out var rightEntries))
+            return false;
+
+        var rightByName = new Dictionary<string, ExpressionValue>(StringComparer.Ordinal);
+        foreach (var entry in rightEntries)
+            rightByName[entry.Key] = entry.Value;
+
+        var count = 0;
+        foreach (var entry in leftEntries)
+        {
+            if (!rightByName.TryGetValue(entry.Key, out var other) || !LooseEquals(entry.Value, other, depth + 1))
+                return false;
+            count++;
+        }
+
+        return count == rightByName.Count;
     }
 
     private static int Compare(ExpressionValue left, ExpressionValue right)
@@ -337,11 +384,11 @@ internal sealed class ExpressionParser
         foreach (var segment in path.Split('.'))
         {
             if (segment.Length == 0 || UnsafeReferenceSegments.Contains(segment))
-                throw new ExpressionParseException("invalid model reference: #" + path, 0);
+                throw ExpressionParseException.WithoutPosition("invalid model reference: #" + path);
         }
     }
 
-    private static string ArityText(int arity) => arity switch { 1 => "one", 2 => "two", _ => "three" };
+    private static string ArityText(int arity) => arity switch { 1 => "one argument", 2 => "two arguments", _ => "three arguments" };
     private void Fail(string message) => throw new ExpressionParseException(message, _tokenizer.Position);
 
     private sealed class ConstantEvaluator

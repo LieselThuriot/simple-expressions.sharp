@@ -53,6 +53,26 @@ Operators are case-insensitive:
 
 The evaluator follows JavaScript truthiness, loose equality, and value conversion semantics where the .NET value model permits. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable.
 
+## Differences from the TypeScript reference
+
+This port tracks the [TypeScript reference](https://github.com/LieselThuriot/simple-expressions) for grammar, operators, and evaluation order. It deliberately does not reproduce every JavaScript coercion quirk. The differences below are intentional and covered by the shared parity corpus in `parity/cases.json`.
+
+| Behaviour | TypeScript | This port |
+| --- | --- | --- |
+| String to number | `Number("")` is `0` | A string converts only if it parses as a number; `""` and `"   "` are `NaN` |
+| `eq` on two arrays or objects | Reference equality, so `eq(#a, #b)` on equal-looking arrays is false | Structural equality: same length or key set, and every pair loosely equal, to a depth of 64 |
+
+Numbers render as their shortest round-trip decimal, in plain notation for magnitudes in `[1e-6, 1e21)` and lowercase exponent notation outside it — the same rule the Dart port uses, and the same output JavaScript produces for these values.
+
+### Model access caveats
+
+`ExpressionModel` serializes the model through the configured JSON backend on every evaluation. Two consequences worth knowing:
+
+- Repeated evaluations against the same model pay a full object-graph serialization each time. Pass a `JsonObject` (or `JObject`) directly to avoid it.
+- Property names for POCO models follow the serializer, including `[JsonPropertyName]`, naming policies, and `[JsonIgnore]`. The reference implementation reads raw property names instead.
+
+A non-object model root (an array or a primitive) resolves every reference to a missing value.
+
 ## JSON Backends
 
 System.Text.Json is the default build. Build with `-p:Newton=true` for Newtonsoft.Json. Both variants support direct JSON objects and POCO input.

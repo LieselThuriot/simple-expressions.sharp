@@ -72,12 +72,57 @@ internal readonly struct ExpressionValue
         _ => Value,
     };
 
+    private const int PlainNotationMinExponent = -6;
+    private const int PlainNotationMaxExponent = 21;
+
+    /// <summary>
+    /// Renders a double as its shortest round-trip decimal, using plain notation for
+    /// magnitudes in <c>[1e-6, 1e21)</c> and lowercase exponent notation outside that range.
+    /// </summary>
     private static string FormatNumber(double value)
     {
         if (double.IsNaN(value)) return "NaN";
         if (double.IsPositiveInfinity(value)) return "Infinity";
         if (double.IsNegativeInfinity(value)) return "-Infinity";
         if (value == 0) return "0";
-        return value.ToString("R", CultureInfo.InvariantCulture);
+
+        var roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
+        var exponentIndex = roundTrip.IndexOf('E');
+        if (exponentIndex < 0)
+            return roundTrip;
+
+        var mantissa = roundTrip.Substring(0, exponentIndex);
+        var exponent = int.Parse(roundTrip.Substring(exponentIndex + 1), CultureInfo.InvariantCulture);
+
+        var negative = mantissa[0] == '-';
+        if (negative)
+            mantissa = mantissa.Substring(1);
+
+        var pointIndex = mantissa.IndexOf('.');
+        var digits = pointIndex < 0 ? mantissa : mantissa.Remove(pointIndex, 1);
+        // Decimal exponent of the leading digit, e.g. 1.5E+3 -> 3, 1.5E-7 -> -7.
+        var leadingExponent = exponent + (pointIndex < 0 ? mantissa.Length : pointIndex) - 1;
+
+        var text = leadingExponent >= PlainNotationMinExponent && leadingExponent < PlainNotationMaxExponent
+            ? ToPlainNotation(digits, leadingExponent)
+            : ToExponentNotation(digits, leadingExponent);
+
+        return negative ? "-" + text : text;
+    }
+
+    private static string ToPlainNotation(string digits, int leadingExponent)
+    {
+        if (leadingExponent < 0)
+            return "0." + new string('0', -leadingExponent - 1) + digits;
+        if (leadingExponent >= digits.Length - 1)
+            return digits + new string('0', leadingExponent - digits.Length + 1);
+        return digits.Substring(0, leadingExponent + 1) + "." + digits.Substring(leadingExponent + 1);
+    }
+
+    private static string ToExponentNotation(string digits, int leadingExponent)
+    {
+        var mantissa = digits.Length == 1 ? digits : digits.Substring(0, 1) + "." + digits.Substring(1);
+        var sign = leadingExponent < 0 ? "-" : "+";
+        return mantissa + "e" + sign + Math.Abs(leadingExponent).ToString(CultureInfo.InvariantCulture);
     }
 }

@@ -8,8 +8,8 @@ public static class SimpleExpressions
     private static readonly object CacheLock = new();
     private static bool _enabledCaches = true;
     private static int _cacheLimit = DefaultCacheLimit;
-    private static readonly Dictionary<string, Evaluator> ParseCache = new(StringComparer.Ordinal);
-    private static readonly Dictionary<string, SimpleExpression> SimpleCache = new(StringComparer.Ordinal);
+    private static readonly FifoCache<Evaluator> ParseCache = new();
+    private static readonly FifoCache<SimpleExpression> SimpleCache = new();
 
     public static bool ExecuteExpression(ModelType model, ExpressionType expression) => Get(expression).Evaluate(model);
 
@@ -107,16 +107,71 @@ public static class SimpleExpressions
         return result;
     }
 
-    private static void SetCacheValue<T>(Dictionary<string, T> cache, string key, T value)
+    private static void SetCacheValue<T>(FifoCache<T> cache, string key, T value)
     {
-        if (cache.Count >= _cacheLimit)
-            cache.Remove(cache.Keys.First());
-        cache[key] = value;
+        if (!cache.ContainsKey(key) && cache.Count >= _cacheLimit)
+            cache.EvictOldest();
+        cache.Set(key, value);
     }
 
-    private static void TrimCache<T>(Dictionary<string, T> cache)
+    private static void TrimCache<T>(FifoCache<T> cache)
     {
         while (cache.Count > _cacheLimit)
-            cache.Remove(cache.Keys.First());
+            cache.EvictOldest();
+    }
+
+    /// <summary>
+    /// A string-keyed cache with insertion-ordered eviction, matching the upstream
+    /// <c>Map</c>-based caches. <see cref="Dictionary{TKey,TValue}"/> alone cannot be used
+    /// because its enumeration order is undefined once entries have been removed.
+    /// </summary>
+    private sealed class FifoCache<T>
+    {
+        private readonly Dictionary<string, LinkedListNode<KeyValuePair<string, T>>> _entries = new(StringComparer.Ordinal);
+        private readonly LinkedList<KeyValuePair<string, T>> _order = new();
+
+        public int Count => _entries.Count;
+
+        public bool ContainsKey(string key) => _entries.ContainsKey(key);
+
+        public bool TryGetValue(string key, out T value)
+        {
+            if (_entries.TryGetValue(key, out var node))
+            {
+                value = node.Value.Value;
+                return true;
+            }
+
+            value = default!;
+            return false;
+        }
+
+        public void Set(string key, T value)
+        {
+            if (_entries.TryGetValue(key, out var existing))
+            {
+                // Replacing a value keeps its original insertion position, as Map.set does.
+                existing.Value = new KeyValuePair<string, T>(key, value);
+                return;
+            }
+
+            _entries[key] = _order.AddLast(new KeyValuePair<string, T>(key, value));
+        }
+
+        public void EvictOldest()
+        {
+            var oldest = _order.First;
+            if (oldest is null)
+                return;
+
+            _order.RemoveFirst();
+            _entries.Remove(oldest.Value.Key);
+        }
+
+        public void Clear()
+        {
+            _entries.Clear();
+            _order.Clear();
+        }
     }
 }

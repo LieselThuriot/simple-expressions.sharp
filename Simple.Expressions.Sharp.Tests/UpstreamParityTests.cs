@@ -95,8 +95,16 @@ public class UpstreamParityTests
         Assert.Equal("hello world", SE.ParseExpression("trim(\"  hello world  \")")(new { }));
         Assert.Equal("123", SE.ParseExpression("trim(123)")(new { }));
         Assert.Equal("", SE.ParseExpression("trim(false)")(new { }));
-        Assert.Null(SE.ParseExpression("trim(null)")(new { }));
+        Assert.Null(SE.ParseExpression("trim(#value)")(new { value = (object?)null }));
         Assert.Null(SE.ParseExpression("trim(#missing)")(new { }));
+    }
+
+    [Fact]
+    public void NullIsNotALiteral()
+    {
+        // Upstream has no null literal: it tokenises as an identifier and fails as an operator.
+        var exception = Assert.Throws<ExpressionParseException>(() => SE.ParseExpression("null"));
+        Assert.Contains("invalid operator: null", exception.Message);
     }
 
     [Fact]
@@ -113,8 +121,9 @@ public class UpstreamParityTests
     {
         Assert.True(SE.ExecuteExpression(new { }, "eq(1, \"1\")"));
         Assert.True(SE.ExecuteExpression(new { }, "eq(false, 0)"));
-        Assert.False(SE.ExecuteExpression(new { }, "eq(null, false)"));
-        Assert.False(SE.ExecuteExpression(new { }, "eq(null, 0)"));
+        Assert.False(SE.ExecuteExpression(new { value = (object?)null }, "eq(#value, false)"));
+        Assert.False(SE.ExecuteExpression(new { value = (object?)null }, "eq(#value, 0)"));
+        Assert.True(SE.ExecuteExpression(new { value = (object?)null }, "eq(#value, #missing)"));
         Assert.False(SE.ExecuteExpression(new { }, "eq(#missing, false)"));
         Assert.False(SE.ExecuteExpression(new { }, "eq(#missing, 0)"));
         Assert.True(SE.ExecuteExpression(new { }, "gt(10, 2)"));
