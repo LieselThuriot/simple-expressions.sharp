@@ -7,5 +7,6 @@
   </Folder>
   <Project Path="Simple.Expressions.Sharp.Tests.Newton/Simple.Expressions.Sharp.Tests.Newton.csproj" />
   <Project Path="Simple.Expressions.Sharp.Tests/Simple.Expressions.Sharp.Tests.csproj" />
+  <Project Path="Simple.Expressions.Sharp.Sample/Simple.Expressions.Sharp.Sample.csproj" />
   <Project Path="Simple.Expressions.Sharp/Simple.Expressions.Sharp.csproj" />
 </Solution>

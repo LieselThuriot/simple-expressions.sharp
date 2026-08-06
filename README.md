@@ -35,6 +35,12 @@ evaluator(model);
 
 Try the interactive playground at [lieselthuriot.github.io/simple-expressions](https://lieselthuriot.github.io/simple-expressions/). The demo showcases the shared expression grammar and evaluation behavior.
 
+To run the C# console sample from this repository:
+
+```bash
+dotnet run --project Simple.Expressions.Sharp.Sample
+```
+
 ## Syntax
 
 Constants support case-insensitive Booleans, signed/decimal/exponent numeric literals, single-, double-, or backtick-quoted strings, and recursive list literals in square brackets. References begin with `#`; dotted references first check for an exact dotted key, then traverse nested object properties. Empty segments and `__proto__`, `constructor`, and `prototype` are rejected.

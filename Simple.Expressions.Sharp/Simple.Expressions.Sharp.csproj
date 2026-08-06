@@ -12,8 +12,8 @@
 		<PackageProjectUrl>https://github.com/LieselThuriot/simple-expressions.sharp</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/LieselThuriot/simple-expressions.sharp</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
-		<Copyright>MIT</Copyright>
-		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<Copyright>Copyright (c) 2026 Liesel Thuriot</Copyright>
+		<PackageLicenseExpression>ISC</PackageLicenseExpression>
 		<PackageTags>parser;script;lexer;execution</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageIcon>simple-expressions.png</PackageIcon>
