@@ -73,14 +73,50 @@ public class ParityCorpusTests
         });
     }
 
+    /// <summary>
+    /// Materialises a corpus model as plain CLR objects. The library reads models by
+    /// reflection and has no JSON dependency, so the corpus is projected onto the shapes a
+    /// caller would actually pass: dictionaries, arrays and primitives.
+    /// </summary>
     private static object? ParseModel(JsonNode? model)
     {
-        var text = model is null ? "{}" : model.ToJsonString();
-#if Newton
-        return Newtonsoft.Json.Linq.JObject.Parse(text);
-#else
-        return JsonNode.Parse(text);
-#endif
+        if (model is null)
+            return new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        return ToClrValue(model);
+    }
+
+    private static object? ToClrValue(JsonNode? node)
+    {
+        switch (node)
+        {
+            case null:
+                return null;
+            case JsonObject jsonObject:
+            {
+                var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+                foreach (var property in jsonObject)
+                    result[property.Key] = ToClrValue(property.Value);
+                return result;
+            }
+            case JsonArray jsonArray:
+            {
+                var result = new object?[jsonArray.Count];
+                for (var index = 0; index < jsonArray.Count; index++)
+                    result[index] = ToClrValue(jsonArray[index]);
+                return result;
+            }
+            default:
+                return node.GetValueKind() switch
+                {
+                    JsonValueKind.Null => null,
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Number => node.GetValue<double>(),
+                    JsonValueKind.String => node.GetValue<string>(),
+                    _ => throw new InvalidOperationException("Unsupported corpus value kind: " + node.GetValueKind()),
+                };
+        }
     }
 
     private static void AssertValue(JsonNode? expected, object? actual)

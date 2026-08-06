@@ -30,12 +30,6 @@ public sealed class SimpleExpression
         _evaluator = evaluator;
     }
 
-    public bool Evaluate(ModelType model)
-    {
-        var input = model.SwitchCase<object?>(static json => json, static value => value);
-        return _evaluator(ExpressionModel.From(input)).IsTruthy();
-    }
-
     public bool Evaluate(object? model) => _evaluator(ExpressionModel.From(model)).IsTruthy();
 
     public object? EvaluateValue(object? model) => _evaluator(ExpressionModel.From(model)).ToPublicValue();

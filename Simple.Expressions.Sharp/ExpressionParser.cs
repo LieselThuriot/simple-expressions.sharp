@@ -62,9 +62,13 @@ internal sealed class ExpressionParser
             case TokenKind.Reference:
             {
                 var path = _tokenizer.Value;
-                ValidateReference(path);
+                var segments = SplitReference(path);
                 _tokenizer.Next();
-                return model => model.Resolve(path);
+                // Split once here rather than on every resolution, and specialise the
+                // single-segment case, mirroring upstream's referenceEvaluator.
+                return segments.Length == 1
+                    ? model => model.ResolveSingle(path)
+                    : model => model.Resolve(path, segments);
             }
             case TokenKind.OpenBracket:
                 return ParseList();
@@ -103,7 +107,14 @@ internal sealed class ExpressionParser
         if (_tokenizer.Kind != TokenKind.CloseBracket)
             Fail("expected closing bracket");
         _tokenizer.Next();
-        return model => ExpressionValue.FromArray(values.Select(value => value(model)).ToArray());
+        var items = values.ToArray();
+        return model =>
+        {
+            var results = new ExpressionValue[items.Length];
+            for (var index = 0; index < items.Length; index++)
+                results[index] = items[index](model);
+            return ExpressionValue.FromArray(results);
+        };
     }
 
     private Evaluator ParseCall(string name)
@@ -201,8 +212,37 @@ internal sealed class ExpressionParser
         return model =>
         {
             var runtimePattern = pattern(model);
-            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && new Regex((string)runtimePattern.Value!, RegexOptions.CultureInvariant).IsMatch(ToFalsyString(input(model))));
+            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && GetRuntimeRegex((string)runtimePattern.Value!).IsMatch(ToFalsyString(input(model))));
         };
+    }
+
+    private const int RuntimePatternCacheLimit = 64;
+    private static readonly Dictionary<string, Regex> RuntimePatterns = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Compiling a <see cref="Regex"/> is expensive and a model-supplied pattern is almost
+    /// always the same one every time, so keep a small bounded cache rather than rebuilding it
+    /// on every evaluation. The cache is cleared wholesale when full: patterns come from model
+    /// data, so an unbounded cache would be caller-controlled growth.
+    /// </summary>
+    private static Regex GetRuntimeRegex(string pattern)
+    {
+        lock (RuntimePatterns)
+        {
+            if (RuntimePatterns.TryGetValue(pattern, out var cached))
+                return cached;
+        }
+
+        var regex = new Regex(pattern, RegexOptions.CultureInvariant);
+
+        lock (RuntimePatterns)
+        {
+            if (RuntimePatterns.Count >= RuntimePatternCacheLimit)
+                RuntimePatterns.Clear();
+            RuntimePatterns[pattern] = regex;
+        }
+
+        return regex;
     }
 
     private static ExpressionValue EvaluateAnd(List<Evaluator> arguments, ExpressionModel model)
@@ -288,7 +328,7 @@ internal sealed class ExpressionParser
             return ExpressionValue.From(0d);
         if (value.Kind == ExpressionValueKind.String)
             return ExpressionValue.From((double)((string)value.Value!).Length);
-        if ((value.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object) && ExpressionModel.TryGetOwnLength(value.Value!, out var length))
+        if (ExpressionModel.TryGetOwnLength(value, out var length))
             return length;
         throw new InvalidOperationException("Input does not have a length");
     }
@@ -379,13 +419,16 @@ internal sealed class ExpressionParser
         return double.IsNaN(leftNumber) || double.IsNaN(rightNumber) ? 0 : leftNumber.CompareTo(rightNumber);
     }
 
-    private static void ValidateReference(string path)
+    private static string[] SplitReference(string path)
     {
-        foreach (var segment in path.Split('.'))
+        var segments = path.Split('.');
+        foreach (var segment in segments)
         {
             if (segment.Length == 0 || UnsafeReferenceSegments.Contains(segment))
                 throw ExpressionParseException.WithoutPosition("invalid model reference: #" + path);
         }
+
+        return segments;
     }
 
     private static string ArityText(int arity) => arity switch { 1 => "one argument", 2 => "two arguments", _ => "three arguments" };

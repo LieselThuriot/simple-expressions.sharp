@@ -41,15 +41,16 @@ public readonly struct FluentType<TFirst, TSecond> : IEquatable<FluentType<TFirs
         Second = value;
     }
 
-    public override int GetHashCode() => HashCodeCalculator.GetHashCode(
-    [
-        2,
-        _currentType,
-        First,
-        Second,
-        typeof(TFirst),
-        typeof(TSecond)
-    ]);
+    public override int GetHashCode()
+    {
+        var hashCode = HashCodeCalculator.Seed;
+        hashCode = HashCodeCalculator.Combine(hashCode, 2);
+        hashCode = HashCodeCalculator.Combine(hashCode, (int)_currentType);
+        hashCode = HashCodeCalculator.Combine(hashCode, First);
+        hashCode = HashCodeCalculator.Combine(hashCode, Second);
+        hashCode = HashCodeCalculator.Combine(hashCode, typeof(TFirst).GetHashCode());
+        return HashCodeCalculator.Combine(hashCode, typeof(TSecond).GetHashCode());
+    }
 
     public bool Equals(FluentType<TFirst, TSecond> other) => _currentType switch
     {
@@ -156,17 +157,18 @@ public readonly struct FluentType<TFirst, TSecond, TThird> : IEquatable<FluentTy
         Third = value;
     }
 
-    public override int GetHashCode() => HashCodeCalculator.GetHashCode(
-    [
-        3,
-        _currentType,
-        First,
-        Second,
-        Third,
-        typeof(TFirst),
-        typeof(TSecond),
-        typeof(TThird)
-    ]);
+    public override int GetHashCode()
+    {
+        var hashCode = HashCodeCalculator.Seed;
+        hashCode = HashCodeCalculator.Combine(hashCode, 3);
+        hashCode = HashCodeCalculator.Combine(hashCode, (int)_currentType);
+        hashCode = HashCodeCalculator.Combine(hashCode, First);
+        hashCode = HashCodeCalculator.Combine(hashCode, Second);
+        hashCode = HashCodeCalculator.Combine(hashCode, Third);
+        hashCode = HashCodeCalculator.Combine(hashCode, typeof(TFirst).GetHashCode());
+        hashCode = HashCodeCalculator.Combine(hashCode, typeof(TSecond).GetHashCode());
+        return HashCodeCalculator.Combine(hashCode, typeof(TThird).GetHashCode());
+    }
 
     public bool Equals(FluentType<TFirst, TSecond, TThird> other) => _currentType switch
     {
@@ -241,7 +243,16 @@ public readonly struct FluentType<TFirst, TSecond, TThird> : IEquatable<FluentTy
     };
 }
 
+/// <summary>
+/// FNV-1a folding, applied one field at a time so hashing a union does not allocate an
+/// <see cref="object"/> array and box each field on the way in.
+/// </summary>
 internal static class HashCodeCalculator
 {
-    public static int GetHashCode(IEnumerable<object> hashFieldValues) => hashFieldValues.Aggregate(-2128831035, (hashCode, value) => (hashCode ^ (value?.GetHashCode() ?? 0)) * 16777619);
+    public const int Seed = -2128831035;
+    private const int Prime = 16777619;
+
+    public static int Combine(int hashCode, int value) => (hashCode ^ value) * Prime;
+
+    public static int Combine<T>(int hashCode, T value) => Combine(hashCode, EqualityComparer<T>.Default.GetHashCode(value));
 }

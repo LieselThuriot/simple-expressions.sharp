@@ -1,86 +1,72 @@
 #nullable enable
 
+using System.Collections;
+using System.Globalization;
+
 namespace Simple.Expressions;
 
+/// <summary>
+/// Wraps the caller's model. Nothing is copied or converted up front: references are resolved
+/// against the live object when an expression asks for them, so the cost of an evaluation is
+/// proportional to what the expression reads rather than to the size of the model.
+/// </summary>
 internal sealed class ExpressionModel
 {
-    private readonly JsonObject? _root;
+    private readonly object? _root;
 
-    private ExpressionModel(JsonObject? root)
+    private ExpressionModel(object? root)
     {
         _root = root;
     }
 
-    public static ExpressionModel From(object? model)
-    {
-        if (model is null)
-            return new ExpressionModel(null);
+    public static ExpressionModel From(object? model) => new(model);
 
-        if (model is JsonObject json)
-            return new ExpressionModel(json);
-
-#if Newton
-        return new ExpressionModel(Newtonsoft.Json.Linq.JObject.FromObject(model));
-#else
-        return new ExpressionModel(System.Text.Json.JsonSerializer.SerializeToNode(model) as JsonObject);
-#endif
-    }
-
-    public ExpressionValue Resolve(string path)
+    /// <summary>Resolves a reference with no dots in it.</summary>
+    public ExpressionValue ResolveSingle(string name)
     {
         if (_root is null)
             return ExpressionValue.Missing;
 
-        var segments = path.Split('.');
-        if (segments.Length == 1)
-            return TryGetProperty(_root, path, out var direct) ? Convert(direct) : ExpressionValue.Missing;
+        return ModelAccessor.TryGetMember(_root, name, out var value) ? Convert(value) : ExpressionValue.Missing;
+    }
 
-        if (TryGetProperty(_root, path, out var dotted))
+    /// <summary>
+    /// Resolves a dotted reference. A member whose name is literally the dotted path wins over
+    /// traversal, matching upstream.
+    /// </summary>
+    public ExpressionValue Resolve(string path, string[] segments)
+    {
+        if (_root is null)
+            return ExpressionValue.Missing;
+
+        if (ModelAccessor.TryGetMember(_root, path, out var dotted))
             return Convert(dotted);
 
-        object? value = _root;
+        var value = _root;
         foreach (var segment in segments)
         {
-            if (value is null || !TryGetProperty(value, segment, out value))
+            if (value is null || !ModelAccessor.TryGetMember(value, segment, out value))
                 return ExpressionValue.Missing;
         }
 
         return Convert(value);
     }
 
-    public static bool TryGetOwnLength(object value, out ExpressionValue length)
+    public static bool TryGetOwnLength(ExpressionValue value, out ExpressionValue length)
     {
-        if (value is IReadOnlyCollection<ExpressionValue> expressionValues)
+        if (value.Kind == ExpressionValueKind.Array)
         {
-            length = ExpressionValue.From((double)expressionValues.Count);
+            length = ExpressionValue.From((double)Count(value.Value!));
             return true;
         }
 
-#if Newton
-        if (value is Newtonsoft.Json.Linq.JArray array)
+        // Upstream reads an own `length` member; on a model object that is an ordinary member
+        // lookup, so `new { length = 4 }` has a length and `new { Length = 4 }` does not.
+        if (value.Kind == ExpressionValueKind.Object && ModelAccessor.TryGetMember(value.Value!, "length", out var member))
         {
-            length = ExpressionValue.From((double)array.Count);
+            length = Convert(member);
             return true;
         }
-
-        if (value is JsonObject obj && TryGetProperty(obj, "length", out var property))
-        {
-            length = Convert(property);
-            return true;
-        }
-#else
-        if (value is System.Text.Json.Nodes.JsonArray array)
-        {
-            length = ExpressionValue.From((double)array.Count);
-            return true;
-        }
-
-        if (value is System.Text.Json.Nodes.JsonObject obj && TryGetProperty(obj, "length", out var property))
-        {
-            length = Convert(property);
-            return true;
-        }
-#endif
 
         length = default;
         return false;
@@ -94,136 +80,95 @@ internal sealed class ExpressionModel
             return false;
         }
 
+        // List literals already hold converted values.
         if (value.Value is IReadOnlyList<ExpressionValue> expressionValues)
         {
             values = expressionValues;
             return true;
         }
 
-#if Newton
-        if (value.Value is Newtonsoft.Json.Linq.JArray newtonArray)
-        {
-            values = newtonArray.Select(Convert);
-            return true;
-        }
-#else
-        if (value.Value is System.Text.Json.Nodes.JsonArray systemTextJsonArray)
-        {
-            values = systemTextJsonArray.Select(Convert);
-            return true;
-        }
-#endif
-
-        values = Enumerable.Empty<ExpressionValue>();
-        return false;
+        // Deferred, so in() and structural comparison can stop early.
+        values = ConvertItems((IEnumerable)value.Value!);
+        return true;
     }
 
     public static bool TryGetObjectEntries(ExpressionValue value, out IEnumerable<KeyValuePair<string, ExpressionValue>> entries)
     {
-        if (value.Kind == ExpressionValueKind.Object)
+        if (value.Kind != ExpressionValueKind.Object)
         {
-#if Newton
-            if (value.Value is JsonObject newtonObject)
-            {
-                entries = newtonObject.Properties().Select(property => new KeyValuePair<string, ExpressionValue>(property.Name, Convert(property.Value)));
-                return true;
-            }
-#else
-            if (value.Value is System.Text.Json.Nodes.JsonObject systemTextJsonObject)
-            {
-                entries = systemTextJsonObject.Select(property => new KeyValuePair<string, ExpressionValue>(property.Key, Convert(property.Value)));
-                return true;
-            }
-#endif
+            entries = Enumerable.Empty<KeyValuePair<string, ExpressionValue>>();
+            return false;
         }
 
-        entries = Enumerable.Empty<KeyValuePair<string, ExpressionValue>>();
-        return false;
+        entries = ConvertEntries(value.Value!);
+        return true;
     }
 
     public static string ArrayToString(object value)
     {
         if (value is IReadOnlyList<ExpressionValue> expressionValues)
-            return string.Join(",", expressionValues.Select(item => item.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : item.ToJavaScriptString()));
+            return string.Join(",", expressionValues.Select(ItemToString));
 
-#if Newton
-        if (value is Newtonsoft.Json.Linq.JArray array)
-            return string.Join(",", array.Select(item => item is null ? string.Empty : Convert(item).Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : Convert(item).ToJavaScriptString()));
-#else
-        if (value is System.Text.Json.Nodes.JsonArray array)
-            return string.Join(",", array.Select(item => item is null ? string.Empty : Convert(item).Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : Convert(item).ToJavaScriptString()));
-#endif
-        return string.Empty;
+        return string.Join(",", ConvertItems((IEnumerable)value).Select(ItemToString));
     }
 
-    private static bool TryGetProperty(object value, string name, out object? property)
+    private static string ItemToString(ExpressionValue item)
+        => item.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : item.ToJavaScriptString();
+
+    private static IEnumerable<ExpressionValue> ConvertItems(IEnumerable source)
     {
-#if Newton
-        if (value is JsonObject obj && obj.TryGetValue(name, out var token))
-        {
-            property = token;
-            return true;
-        }
-#else
-        if (value is System.Text.Json.Nodes.JsonObject obj && obj.TryGetPropertyValue(name, out var node))
-        {
-            property = node;
-            return true;
-        }
-#endif
-        property = null;
-        return false;
+        foreach (var item in source)
+            yield return Convert(item);
     }
 
-    private static ExpressionValue Convert(object? value)
+    private static IEnumerable<KeyValuePair<string, ExpressionValue>> ConvertEntries(object source)
     {
-        if (value is null)
-            return ExpressionValue.Null;
-
-#if Newton
-        if (value is Newtonsoft.Json.Linq.JArray array)
-            return ExpressionValue.FromArray(array);
-        if (value is JsonObject obj)
-            return ExpressionValue.FromObject(obj);
-
-        var token = (Newtonsoft.Json.Linq.JValue)value;
-        return token.Type switch
-        {
-            JsonTokenType.Null => ExpressionValue.Null,
-            JsonTokenType.Boolean => ExpressionValue.From(token.Value is true),
-            JsonTokenType.Integer or JsonTokenType.Float => ExpressionValue.From(GetNumber(token)),
-            JsonTokenType.String => ExpressionValue.From((string)token.Value!),
-            _ => ExpressionValue.Null,
-        };
-#else
-        if (value is System.Text.Json.Nodes.JsonArray array)
-            return ExpressionValue.FromArray(array);
-        if (value is System.Text.Json.Nodes.JsonObject obj)
-            return ExpressionValue.FromObject(obj);
-
-        var node = (System.Text.Json.Nodes.JsonValue)value;
-        return node.GetValueKind() switch
-        {
-            System.Text.Json.JsonValueKind.Null => ExpressionValue.Null,
-            System.Text.Json.JsonValueKind.True => ExpressionValue.From(true),
-            System.Text.Json.JsonValueKind.False => ExpressionValue.From(false),
-            System.Text.Json.JsonValueKind.Number => ExpressionValue.From(GetNumber(node)),
-            System.Text.Json.JsonValueKind.String => ExpressionValue.From(node.GetValue<string>()!),
-            _ => ExpressionValue.Null,
-        };
-#endif
+        foreach (var entry in ModelAccessor.GetEntries(source))
+            yield return new KeyValuePair<string, ExpressionValue>(entry.Key, Convert(entry.Value));
     }
 
-#if Newton
-    private static double GetNumber(Newtonsoft.Json.Linq.JValue value) => value.ToObject<double>();
-#else
-    private static double GetNumber(System.Text.Json.Nodes.JsonValue value)
+    private static int Count(object value)
     {
-        if (value.TryGetValue<double>(out var doubleValue)) return doubleValue;
-        if (value.TryGetValue<decimal>(out var decimalValue)) return (double)decimalValue;
-        if (value.TryGetValue<long>(out var longValue)) return longValue;
-        if (value.TryGetValue<ulong>(out var ulongValue)) return ulongValue;
-        return value.GetValue<int>();
+        if (value is ICollection collection)
+            return collection.Count;
+
+        var count = 0;
+        foreach (var _ in (IEnumerable)value)
+            count++;
+        return count;
     }
-#endif
+
+    /// <summary>
+    /// Maps a CLR value onto the JavaScript value model the evaluator works in. The coercions
+    /// for enums, dates, GUIDs and byte arrays deliberately match what the JSON serializer
+    /// produced before, so expressions comparing against ISO date strings or enum numbers keep
+    /// working.
+    /// </summary>
+    private static ExpressionValue Convert(object? value) => value switch
+    {
+        null => ExpressionValue.Null,
+        bool boolean => ExpressionValue.From(boolean),
+        string text => ExpressionValue.From(text),
+        double number => ExpressionValue.From(number),
+        int number => ExpressionValue.From(number),
+        long number => ExpressionValue.From(number),
+        decimal number => ExpressionValue.From((double)number),
+        float number => ExpressionValue.From(number),
+        short number => ExpressionValue.From(number),
+        byte number => ExpressionValue.From(number),
+        sbyte number => ExpressionValue.From(number),
+        ushort number => ExpressionValue.From(number),
+        uint number => ExpressionValue.From(number),
+        ulong number => ExpressionValue.From(number),
+        char character => ExpressionValue.From(character.ToString()),
+        Enum enumeration => ExpressionValue.From(System.Convert.ToDouble(enumeration, CultureInfo.InvariantCulture)),
+        DateTime date => ExpressionValue.From(date.ToString("O", CultureInfo.InvariantCulture)),
+        DateTimeOffset date => ExpressionValue.From(date.ToString("O", CultureInfo.InvariantCulture)),
+        Guid identifier => ExpressionValue.From(identifier.ToString("D", CultureInfo.InvariantCulture)),
+        byte[] bytes => ExpressionValue.From(System.Convert.ToBase64String(bytes)),
+        Uri uri => ExpressionValue.From(uri.OriginalString),
+        // A dictionary is an object, not a sequence of its entries.
+        IEnumerable sequence when !ModelAccessor.IsDictionary(value) => ExpressionValue.FromArray(sequence),
+        _ => ExpressionValue.FromObject(value),
+    };
 }

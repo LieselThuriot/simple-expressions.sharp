@@ -29,7 +29,7 @@ evaluator(model);
 // "Hello, Ada"
 ```
 
-`ExecuteExpression` and `SimpleExpression.Evaluate` return expression truthiness. `ParseExpression` returns a reusable evaluator and preserves scalar results. A missing or JSON-null value is represented as `null` at the public API boundary.
+`ExecuteExpression` and `SimpleExpression.Evaluate` return expression truthiness. `ParseExpression` returns a reusable evaluator and preserves scalar results. A missing or null value is represented as `null` at the public API boundary.
 
 ## Demo
 
@@ -64,18 +64,21 @@ This port tracks the [TypeScript reference](https://github.com/LieselThuriot/sim
 
 Numbers render as their shortest round-trip decimal, in plain notation for magnitudes in `[1e-6, 1e21)` and lowercase exponent notation outside it — the same rule the Dart port uses, and the same output JavaScript produces for these values.
 
-### Model access caveats
+## Model access
 
-`ExpressionModel` serializes the model through the configured JSON backend on every evaluation. Two consequences worth knowing:
+Models are read by reflection, on demand. Nothing is copied or converted up front, so an evaluation costs only what the expression actually reads — a small expression against a large model does not walk the parts it never references. Property getters are compiled and cached per type on first use.
 
-- Repeated evaluations against the same model pay a full object-graph serialization each time. Pass a `JsonObject` (or `JObject`) directly to avoid it.
-- Property names for POCO models follow the serializer, including `[JsonPropertyName]`, naming policies, and `[JsonIgnore]`. The reference implementation reads raw property names instead.
+Anything can be a model: a POCO, an anonymous type, a `Dictionary<string, object?>`, or any other `IDictionary`. A dictionary's keys are its members; every other object's public instance properties are.
+
+Three things worth knowing:
+
+- **Property names are CLR names**, matched ordinally and case-sensitively. `[JsonPropertyName]`, `[JsonIgnore]`, and naming policies are not honoured — this port has no JSON dependency. The TypeScript reference reads raw property names too.
+- **Models are read live**, at evaluation time. Mutating a model between evaluations is visible to the next one.
+- **Values are coerced the way JSON serialization used to render them**: enums become their numeric value, `DateTime`/`DateTimeOffset` become round-trip (`"O"`) strings, `Guid` becomes its `"D"` form, `byte[]` becomes base64.
 
 A non-object model root (an array or a primitive) resolves every reference to a missing value.
 
-## JSON Backends
-
-System.Text.Json is the default build. Build with `-p:Newton=true` for Newtonsoft.Json. Both variants support direct JSON objects and POCO input.
+Sequences are read lazily, so `in(...)` can stop at the first match. A consequence: a single-pass `IEnumerable` may be enumerated more than once within an evaluation. Pass a materialised collection if the sequence cannot be re-enumerated.
 
 ## Caching
 

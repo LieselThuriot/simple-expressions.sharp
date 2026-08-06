@@ -11,8 +11,6 @@ public static class SimpleExpressions
     private static readonly FifoCache<Evaluator> ParseCache = new();
     private static readonly FifoCache<SimpleExpression> SimpleCache = new();
 
-    public static bool ExecuteExpression(ModelType model, ExpressionType expression) => Get(expression).Evaluate(model);
-
     public static bool ExecuteExpression(object? model, string expression) => Get(expression).Evaluate(model);
 
     public static bool ExecuteExpression(object? model, bool expression) => Get(expression).Evaluate(model);
@@ -23,9 +21,16 @@ public static class SimpleExpressions
         return model => evaluator(ExpressionModel.From(model)).ToPublicValue();
     }
 
+    private const string TrueKey = "True";
+    private const string FalseKey = "False";
+
     public static SimpleExpression Get(ExpressionType expression)
     {
-        var key = expression.ToString();
+        // ToString() would interpolate, allocating a fresh copy of the expression string on
+        // every call before the cache is even consulted. The underlying string is the key.
+        var key = expression.SwitchCaseOrDefault<string>(
+            static value => value ? TrueKey : FalseKey,
+            static value => value);
         lock (CacheLock)
         {
             if (_enabledCaches && SimpleCache.TryGetValue(key, out var cached))

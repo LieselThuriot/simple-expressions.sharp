@@ -1,6 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <Newton>true</Newton>
-  </PropertyGroup>
-  <Import Project="..\Directory.Build.props" />
-</Project>

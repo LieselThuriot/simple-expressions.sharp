@@ -26,10 +26,23 @@ internal readonly struct ExpressionValue
     public ExpressionValueKind Kind { get; }
     public object? Value { get; }
 
+    // Every logical and comparison operator produces a boolean, and 0/1 are the numbers that
+    // show up most; pre-boxing them keeps those intermediates allocation-free.
+    private static readonly object BoxedTrue = true;
+    private static readonly object BoxedFalse = false;
+    private static readonly object BoxedZero = 0d;
+    private static readonly object BoxedOne = 1d;
+
     public static ExpressionValue Missing => new(ExpressionValueKind.Missing);
     public static ExpressionValue Null => new(ExpressionValueKind.Null);
-    public static ExpressionValue From(bool value) => new(ExpressionValueKind.Boolean, value);
-    public static ExpressionValue From(double value) => new(ExpressionValueKind.Number, value);
+    public static ExpressionValue From(bool value) => new(ExpressionValueKind.Boolean, value ? BoxedTrue : BoxedFalse);
+
+    public static ExpressionValue From(double value) => new(ExpressionValueKind.Number, value switch
+    {
+        0 => BoxedZero,
+        1 => BoxedOne,
+        _ => value,
+    });
     public static ExpressionValue From(string value) => new(ExpressionValueKind.String, value);
     public static ExpressionValue FromArray(object value) => new(ExpressionValueKind.Array, value);
     public static ExpressionValue FromArray(IReadOnlyList<ExpressionValue> value) => new(ExpressionValueKind.Array, value);
