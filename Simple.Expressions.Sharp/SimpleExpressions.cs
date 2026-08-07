@@ -21,16 +21,12 @@ public static class SimpleExpressions
         return model => evaluator(ExpressionModel.From(model)).ToPublicValue();
     }
 
-    private const string TrueKey = "True";
-    private const string FalseKey = "False";
-
     public static SimpleExpression Get(ExpressionType expression)
     {
-        // ToString() would interpolate, allocating a fresh copy of the expression string on
-        // every call before the cache is even consulted. The underlying string is the key.
+        // Prefix the type so boolean true and string "True" cannot share a cache entry.
         var key = expression.SwitchCaseOrDefault<string>(
-            static value => value ? TrueKey : FalseKey,
-            static value => value);
+            static value => value ? "b:true" : "b:false",
+            static value => "s:" + value);
         lock (CacheLock)
         {
             if (_enabledCaches && SimpleCache.TryGetValue(key, out var cached))

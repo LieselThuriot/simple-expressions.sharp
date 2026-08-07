@@ -54,6 +54,18 @@ internal static class ModelAccessor
             return (MemberAccessor)Activator.CreateInstance(typeof(GenericDictionaryAccessor<>).MakeGenericType(arguments[1]))!;
         }
 
+        foreach (var candidate in EnumerateInterfaces(type))
+        {
+            if (!candidate.IsGenericType || candidate.GetGenericTypeDefinition() != typeof(IReadOnlyDictionary<,>))
+                continue;
+
+            var arguments = candidate.GetGenericArguments();
+            if (arguments[0] != typeof(string))
+                continue;
+
+            return (MemberAccessor)Activator.CreateInstance(typeof(GenericReadOnlyDictionaryAccessor<>).MakeGenericType(arguments[1]))!;
+        }
+
         if (typeof(IDictionary).IsAssignableFrom(type))
             return new NonGenericDictionaryAccessor();
 
@@ -95,6 +107,29 @@ internal static class ModelAccessor
         public override IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
         {
             foreach (var entry in (IDictionary<string, TValue>)instance)
+                yield return new KeyValuePair<string, object?>(entry.Key, entry.Value);
+        }
+    }
+
+    private sealed class GenericReadOnlyDictionaryAccessor<TValue> : MemberAccessor
+    {
+        public override bool IsDictionary => true;
+
+        public override bool TryGet(object instance, string name, out object? value)
+        {
+            if (((IReadOnlyDictionary<string, TValue>)instance).TryGetValue(name, out var typed))
+            {
+                value = typed;
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
+
+        public override IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
+        {
+            foreach (var entry in (IReadOnlyDictionary<string, TValue>)instance)
                 yield return new KeyValuePair<string, object?>(entry.Key, entry.Value);
         }
     }

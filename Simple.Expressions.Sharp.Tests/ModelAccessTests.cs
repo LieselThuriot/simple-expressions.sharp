@@ -133,6 +133,18 @@ public class ModelAccessTests
     }
 
     [Fact]
+    public void ReadsReadOnlyDictionariesAsKeyedModels()
+    {
+        IReadOnlyDictionary<string, object?> model = new Dictionary<string, object?>
+        {
+            ["role"] = "engineer",
+        };
+
+        Assert.True(SE.ExecuteExpression(model, "eq(#role, \"engineer\")"));
+        Assert.False(SE.ExecuteExpression(model, "defined(#missing)"));
+    }
+
+    [Fact]
     public void ReadsNonGenericDictionaries()
     {
         var model = new Hashtable { ["role"] = "engineer", ["score"] = 8 };

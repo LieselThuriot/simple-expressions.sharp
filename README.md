@@ -55,7 +55,7 @@ The evaluator follows JavaScript truthiness, loose equality, and value conversio
 
 ## Differences from the TypeScript reference
 
-This port tracks the [TypeScript reference](https://github.com/LieselThuriot/simple-expressions) for grammar, operators, and evaluation order. It deliberately does not reproduce every JavaScript coercion quirk. The differences below are intentional and covered by the shared parity corpus in `parity/cases.json`.
+This port tracks the [TypeScript reference](https://github.com/LieselThuriot/simple-expressions) for grammar, operators, and evaluation order. It deliberately does not reproduce every JavaScript coercion quirk. Cross-language compatibility is tested independently in [simple-expressions-conformance](https://github.com/LieselThuriot/simple-expressions-conformance).
 
 | Behaviour | TypeScript | This port |
 | --- | --- | --- |

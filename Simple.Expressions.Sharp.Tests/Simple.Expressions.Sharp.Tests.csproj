@@ -25,11 +25,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Using Include="Xunit" />
+		<None Include="..\conformance\spec\v1\cases.json" Link="conformance\spec\v1\cases.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Include="..\parity\cases.json" Link="parity\cases.json" CopyToOutputDirectory="PreserveNewest" />
+		<Using Include="Xunit" />
 	</ItemGroup>
-
 </Project>
