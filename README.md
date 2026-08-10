@@ -33,7 +33,7 @@ evaluator(model);
 
 ## Demo
 
-Try the interactive playground at [lieselthuriot.github.io/simple-expressions](https://lieselthuriot.github.io/simple-expressions/). The demo showcases the shared expression grammar and evaluation behavior.
+Try the interactive playground at [simple-expressions.liesel.dev](https://simple-expressions.liesel.dev/). The demo showcases the shared expression grammar and evaluation behavior.
 
 To run the C# console sample from this repository:
 
