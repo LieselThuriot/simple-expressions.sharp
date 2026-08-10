@@ -60,7 +60,6 @@ This port follows the [TypeScript reference](https://github.com/LieselThuriot/si
 | Behaviour | TypeScript | This port |
 | --- | --- | --- |
 | String to number | `Number("")` is `0` | A string converts only if it parses as a number; `""` and `"   "` are `NaN` |
-| `eq` on two arrays or objects | Reference equality, so `eq(#a, #b)` on equal-looking arrays is false | Structural equality: same length or key set, and every pair loosely equal, to a depth of 64 |
 
 Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
 
