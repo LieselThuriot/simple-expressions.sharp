@@ -3,7 +3,7 @@
 ![simple-expressions logo](https://raw.githubusercontent.com/LieselThuriot/simple-expressions.sharp/main/simple-expressions.png)
 
 [![NuGet](https://img.shields.io/nuget/v/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
-[![license](https://img.shields.io/nuget/l/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
+[![license](https://img.shields.io/npm/l/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
 
 C# port of [simple-expressions](https://github.com/LieselThuriot/simple-expressions). It follows the reference project's current grammar and evaluation semantics.
 
