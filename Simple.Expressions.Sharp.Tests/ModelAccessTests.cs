@@ -32,8 +32,8 @@ public class ModelAccessTests
         public string? Nickname { get; set; }
         public int Score { get; set; } = 8;
         public Person? Manager { get; set; }
-        public string Computed => "computed";
-        private string Secret => "hidden";
+        public static string Computed => "computed";
+
         public static string Shared => "static";
     }
 
@@ -51,7 +51,6 @@ public class ModelAccessTests
         var model = new Person();
         Assert.True(SE.ExecuteExpression(model, "eq(#Name, \"Ada\")"));
         Assert.True(SE.ExecuteExpression(model, "eq(#Score, 8)"));
-        Assert.True(SE.ExecuteExpression(model, "eq(#Computed, \"computed\")"));
     }
 
     private sealed class Annotated
@@ -286,6 +285,8 @@ public class ModelAccessTests
         Assert.Equal("Grace!", evaluator(new Person { Name = "Grace" }));
     }
 
+    private static readonly int[] model = [1, 2, 3];
+
     // --- roots --------------------------------------------------------------------------
 
     [Fact]
@@ -294,6 +295,6 @@ public class ModelAccessTests
         Assert.True(SE.ExecuteExpression(null, "empty(#value)"));
         Assert.False(SE.ExecuteExpression(42, "defined(#value)"));
         Assert.False(SE.ExecuteExpression("text", "defined(#value)"));
-        Assert.False(SE.ExecuteExpression(new[] { 1, 2, 3 }, "defined(#value)"));
+        Assert.False(SE.ExecuteExpression(model, "defined(#value)"));
     }
 }

@@ -2,8 +2,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using StjObject = System.Text.Json.Nodes.JsonObject;
 using SE = Simple.Expressions.SimpleExpressions;
+using StjObject = System.Text.Json.Nodes.JsonObject;
 
 namespace Simple.Expressions.Tests;
 
@@ -16,8 +16,8 @@ public sealed class ConformanceTests
     public void MatchesSpecificationV1(string id)
     {
         var item = Cases[id];
-        var expression = (string)item["expression"]!;
-        var model = ParseModel(item["model"]);
+        string expression = (string)item["expression"]!;
+        object? model = ParseModel(item["model"]);
 
         if (item["error"] is JsonNode error)
         {
@@ -39,7 +39,11 @@ public sealed class ConformanceTests
         get
         {
             var data = new TheoryData<string>();
-            foreach (var id in Cases.Keys.OrderBy(value => value, StringComparer.Ordinal)) data.Add(id);
+            foreach (string? id in Cases.Keys.OrderBy(value => value, StringComparer.Ordinal))
+            {
+                data.Add(id);
+            }
+
             return data;
         }
     }
@@ -64,29 +68,40 @@ public sealed class ConformanceTests
 
     private static void AssertValue(JsonNode? expected, object? actual)
     {
-        if (expected is null || expected.GetValueKind() == JsonValueKind.Null) { Assert.Null(actual); return; }
+        if (expected is null || expected.GetValueKind() == JsonValueKind.Null)
+        { Assert.Null(actual); return; }
+
         switch (expected.GetValueKind())
         {
             case JsonValueKind.True:
             case JsonValueKind.False:
-                Assert.Equal(expected.GetValue<bool>(), Assert.IsType<bool>(actual)); break;
+                Assert.Equal(expected.GetValue<bool>(), Assert.IsType<bool>(actual));
+                break;
             case JsonValueKind.Number:
-                Assert.Equal(expected.GetValue<double>(), Assert.IsType<double>(actual)); break;
+                Assert.Equal(expected.GetValue<double>(), Assert.IsType<double>(actual));
+                break;
             case JsonValueKind.String:
-                Assert.Equal(expected.GetValue<string>(), Assert.IsType<string>(actual)); break;
+                Assert.Equal(expected.GetValue<string>(), Assert.IsType<string>(actual));
+                break;
             case JsonValueKind.Array:
-                var values = Assert.IsAssignableFrom<object?[]>(actual);
+                object?[] values = Assert.IsAssignableFrom<object?[]>(actual);
                 var expectedValues = expected.AsArray();
                 Assert.Equal(expectedValues.Count, values.Length);
-                for (var index = 0; index < values.Length; index++) AssertValue(expectedValues[index], values[index]);
+                for (int index = 0; index < values.Length; index++)
+                {
+                    AssertValue(expectedValues[index], values[index]);
+                }
+
                 break;
-            default: Assert.Fail("Unsupported expectation kind"); break;
+            default:
+                Assert.Fail("Unsupported expectation kind");
+                break;
         }
     }
 
     private static IReadOnlyDictionary<string, StjObject> LoadCases()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "conformance", "spec", "v1", "cases.json");
+        string path = Path.Combine(AppContext.BaseDirectory, "conformance", "spec", "v1", "cases.json");
         var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         return document["cases"]!.AsArray()
             .Select(node => node!.AsObject())

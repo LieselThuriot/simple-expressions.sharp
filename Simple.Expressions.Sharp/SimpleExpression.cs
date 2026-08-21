@@ -6,23 +6,21 @@ public sealed class SimpleExpression
 {
     private readonly Evaluator _evaluator;
 
-    public SimpleExpression(ExpressionType expression)
+    internal SimpleExpression(bool expression)
     {
-        _evaluator = expression.SwitchCase(
-            static value => _ => ExpressionValue.From(value),
-            static expression => Parse(expression),
-            onMismatch: static () => new ArgumentException("Expression must be a Boolean or string.")
-        );
+        _evaluator = _ => ExpressionValue.From(expression);
+    }
 
-        static Evaluator Parse(string expression)
+    internal SimpleExpression(string expression)
+    {
+        // Upstream's SimpleExpression constructor reports "whitespace";
+        // "formatting" is reserved for parseExpression.
+        if (expression is null || expression.Trim().Length == 0)
         {
-            // Upstream's SimpleExpression constructor reports "whitespace";
-            // "formatting" is reserved for parseExpression.
-            if (expression is null || expression.Trim().Length == 0)
-                throw ExpressionParseException.WithoutPosition("whitespace");
-
-            return SimpleExpressions.GetParsedExpression(expression, static value => new ExpressionParser(value).Parse());
+            throw ExpressionParseException.WithoutPosition("whitespace");
         }
+
+        _evaluator = SimpleExpressions.GetParsedExpression(expression, static value => new ExpressionParser(value).Parse());
     }
 
     internal SimpleExpression(Evaluator evaluator)

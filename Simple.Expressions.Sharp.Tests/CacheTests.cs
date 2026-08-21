@@ -33,4 +33,25 @@ public sealed class CacheTests
         Assert.True(boolean.Evaluate(new { }));
         Assert.True(text.Evaluate(new { }));
     }
+
+    [Fact]
+    public void SettingPositiveCacheLimitDoesNotReenableCaching()
+    {
+        SE.DisableCaches();
+        SE.SetCacheLimit(10);
+
+        Assert.NotSame(SE.Get("true"), SE.Get("true"));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void InvalidCacheLimitsThrowWithoutChangingCacheState(int limit)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => SE.SetCacheLimit(limit));
+
+        SE.EnableCaches();
+        Assert.Throws<ArgumentOutOfRangeException>(() => SE.SetCacheLimit(limit));
+        Assert.Same(SE.Get("true"), SE.Get("true"));
+    }
 }

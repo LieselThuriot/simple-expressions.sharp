@@ -2,7 +2,9 @@
 
 namespace Simple.Expressions;
 
+#pragma warning disable RCS1194 // Implement exception constructors
 public class ExpressionParseException : Exception
+#pragma warning restore RCS1194 // Implement exception constructors
 {
     public ExpressionParseException(string message, int position)
         : base($"Invalid Expression at {position}: {message}")

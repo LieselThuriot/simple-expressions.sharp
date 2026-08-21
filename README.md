@@ -47,9 +47,11 @@ Constants support case-insensitive Booleans, signed, decimal, and exponent numer
 
 Operators are case-insensitive:
 
-`not`, `empty`, `len`, `lower`, `upper`, `trim`, `defined`, `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, variadic `and`/`or`/`concat`, and lazy `if`.
+`not`, `empty`, `len`, `lower`, `upper`, `trim`, `defined`, `int`, `num`, `abs`, `floor`, `ceil`, `sqrt`, `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, `pow`, `clamp`, variadic `and`/`or`/`concat`/`add`/`sub`/`mul`/`div`/`mod`/`min`/`max`, and lazy `if`.
 
 `in` requires a list and uses the same loose equality as `eq`. `trim` preserves null and missing values; other falsey values become empty strings before trimming. `defined` is false only for null and missing values. Lists may contain nested lists, model references, and operator expressions.
+
+The numeric operators coerce values to numbers. `add`, `mul`, `min`, and `max` accept a single list argument and expand it one level; `add([])` is zero and `mul([])` is one. `div` and `mod` throw for zero divisors. `round` requires a non-negative safe integer precision.
 
 The evaluator uses JavaScript-style truthiness, loose equality, and value conversion where those rules can be represented by .NET values. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable.
 
@@ -59,7 +61,7 @@ This port follows the [TypeScript reference](https://github.com/LieselThuriot/si
 
 | Behaviour | TypeScript | This port |
 | --- | --- | --- |
-| String to number | `Number("")` is `0` | A string converts only if it parses as a number; `""` and `"   "` are `NaN` |
+| String to number | `Number("")` is `0` | Empty and whitespace strings convert to `0`; other strings convert only if they parse as numbers |
 
 Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
 
@@ -81,7 +83,7 @@ Sequences are read lazily, so `in(...)` can stop at the first match. A single-pa
 
 ## Caching
 
-Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both caches have a FIFO limit of 1,000 entries. Use `SetCacheLimit`, `Clear`, `DisableCaches`, and `EnableCaches` to control them. Disabling caches also clears existing entries.
+Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both caches have a FIFO limit of 1,000 entries. Use `SetCacheLimit` with a value of at least 1 to configure the limit; values below 1 throw. Use `Clear`, `DisableCaches`, and `EnableCaches` to control cache contents and state. Disabling caches also clears existing entries.
 
 ## Security
 

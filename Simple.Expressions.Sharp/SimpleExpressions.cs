@@ -5,11 +5,11 @@ namespace Simple.Expressions;
 public static class SimpleExpressions
 {
     private const int DefaultCacheLimit = 1000;
-    private static readonly object CacheLock = new();
-    private static bool _enabledCaches = true;
-    private static int _cacheLimit = DefaultCacheLimit;
-    private static readonly FifoCache<Evaluator> ParseCache = new();
-    private static readonly FifoCache<SimpleExpression> SimpleCache = new();
+    private static readonly object s_cacheLock = new();
+    private static bool s_enabledCaches = true;
+    private static int s_cacheLimit = DefaultCacheLimit;
+    private static readonly FifoCache<Evaluator> s_parseCache = new();
+    private static readonly FifoCache<SimpleExpression> s_simpleCache = new();
 
     public static bool ExecuteExpression(object? model, string expression) => Get(expression).Evaluate(model);
 
@@ -21,35 +21,72 @@ public static class SimpleExpressions
         return model => evaluator(ExpressionModel.From(model)).ToPublicValue();
     }
 
-    public static SimpleExpression Get(ExpressionType expression)
+    public static SimpleExpression Get(string expression)
     {
-        // Prefix the type so boolean true and string "True" cannot share a cache entry.
-        var key = expression.SwitchCaseOrDefault<string>(
-            static value => value ? "b:true" : "b:false",
-            static value => "s:" + value);
-        lock (CacheLock)
+        string key = "s:" + expression;
+
+        lock (s_cacheLock)
         {
-            if (_enabledCaches && SimpleCache.TryGetValue(key, out var cached))
+            if (s_enabledCaches && s_simpleCache.TryGetValue(key, out var cached))
+            {
                 return cached;
+            }
         }
 
-        var result = new SimpleExpression(expression);
-        lock (CacheLock)
+        SimpleExpression result = new(expression);
+
+        lock (s_cacheLock)
         {
-            if (_enabledCaches)
-                SetCacheValue(SimpleCache, key, result);
+            if (s_enabledCaches)
+            {
+                SetCacheValue(s_simpleCache, key, result);
+            }
         }
+
+        return result;
+    }
+
+    public static SimpleExpression Get(bool expression)
+    {
+        string key = expression ? "b:true" : "b:false";
+
+        lock (s_cacheLock)
+        {
+            if (s_enabledCaches && s_simpleCache.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+        }
+
+        SimpleExpression result = new(expression);
+
+        lock (s_cacheLock)
+        {
+            if (s_enabledCaches)
+            {
+                SetCacheValue(s_simpleCache, key, result);
+            }
+        }
+
         return result;
     }
 
     public static void Clear(Dictionary<string, bool>? options = null)
     {
-        var clearParsed = options is null || options.TryGetValue("parsed", out var parsed) && parsed;
-        var clearExpressions = options is null || options.TryGetValue("expression", out var expression) && expression;
-        lock (CacheLock)
+        bool clearParsed = options is null || (options.TryGetValue("parsed", out bool parsed) && parsed);
+        bool clearExpressions = options is null || (options.TryGetValue("expression", out bool expression) && expression);
+        lock (s_cacheLock)
         {
-            if (clearParsed) ParseCache.Clear();
-            if (clearExpressions) SimpleCache.Clear();
+            if (clearParsed)
+            {
+                s_parseCache.Clear();
+                ExpressionParser.ClearRuntimePatterns();
+            }
+
+            if (clearExpressions)
+            {
+                s_simpleCache.Clear();
+            }
         }
     }
 
@@ -57,68 +94,84 @@ public static class SimpleExpressions
     {
         if (limit <= 0)
         {
-            DisableCaches();
-            return;
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "Cache limit must be at least 1.");
         }
 
-        lock (CacheLock)
+        lock (s_cacheLock)
         {
-            _cacheLimit = limit;
-            TrimCache(ParseCache);
-            TrimCache(SimpleCache);
+            s_cacheLimit = limit;
+            TrimCache(s_parseCache);
+            TrimCache(s_simpleCache);
         }
     }
 
     public static void DisableCaches()
     {
-        lock (CacheLock)
+        lock (s_cacheLock)
         {
-            _enabledCaches = false;
-            ParseCache.Clear();
-            SimpleCache.Clear();
+            s_enabledCaches = false;
+            s_parseCache.Clear();
+            s_simpleCache.Clear();
         }
     }
 
     public static void EnableCaches()
     {
-        lock (CacheLock)
+        lock (s_cacheLock)
         {
-            _enabledCaches = true;
+            s_enabledCaches = true;
         }
     }
 
     internal static Evaluator GetParsedExpression(string expression, Func<string, Evaluator> factory)
     {
-        if (expression is null) throw new ArgumentNullException(nameof(expression));
-        expression = expression.Trim();
-        if (expression.Length == 0) throw new ExpressionParseException("formatting", 0);
-
-        lock (CacheLock)
+        if (expression is null)
         {
-            if (_enabledCaches && ParseCache.TryGetValue(expression, out var cached))
+            throw new ArgumentNullException(nameof(expression));
+        }
+
+        expression = expression.Trim();
+        if (expression.Length == 0)
+        {
+            throw new ExpressionParseException("formatting", 0);
+        }
+
+        lock (s_cacheLock)
+        {
+            if (s_enabledCaches && s_parseCache.TryGetValue(expression, out var cached))
+            {
                 return cached;
+            }
         }
 
         var result = factory(expression);
-        lock (CacheLock)
+        lock (s_cacheLock)
         {
-            if (_enabledCaches)
-                SetCacheValue(ParseCache, expression, result);
+            if (s_enabledCaches)
+            {
+                SetCacheValue(s_parseCache, expression, result);
+            }
         }
+
         return result;
     }
 
     private static void SetCacheValue<T>(FifoCache<T> cache, string key, T value)
     {
-        if (!cache.ContainsKey(key) && cache.Count >= _cacheLimit)
+        if (!cache.ContainsKey(key) && cache.Count >= s_cacheLimit)
+        {
             cache.EvictOldest();
+        }
+
         cache.Set(key, value);
     }
 
     private static void TrimCache<T>(FifoCache<T> cache)
     {
-        while (cache.Count > _cacheLimit)
+        while (cache.Count > s_cacheLimit)
+        {
             cache.EvictOldest();
+        }
     }
 
     /// <summary>
@@ -163,7 +216,9 @@ public static class SimpleExpressions
         {
             var oldest = _order.First;
             if (oldest is null)
+            {
                 return;
+            }
 
             _order.RemoveFirst();
             _entries.Remove(oldest.Value.Key);

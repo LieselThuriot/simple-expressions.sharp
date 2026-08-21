@@ -6,40 +6,23 @@ namespace Simple.Expressions;
 
 internal delegate ExpressionValue Evaluator(ExpressionModel model);
 
-internal enum TokenKind
+internal sealed class ExpressionParser(string expression)
 {
-    End,
-    Identifier,
-    Number,
-    String,
-    Reference,
-    OpenParen,
-    CloseParen,
-    Comma,
-    OpenBracket,
-    CloseBracket,
-}
-
-internal sealed class ExpressionParser
-{
-    private static readonly HashSet<string> UnsafeReferenceSegments = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> s_unsafeReferenceSegments = new(StringComparer.Ordinal)
     {
         "__proto__", "constructor", "prototype",
     };
 
-    private static readonly Regex NumberPattern = new(@"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$", RegexOptions.CultureInvariant);
-    private readonly Tokenizer _tokenizer;
-
-    public ExpressionParser(string expression)
-    {
-        _tokenizer = new Tokenizer(expression);
-    }
+    private readonly Tokenizer _tokenizer = new(expression);
 
     public Evaluator Parse()
     {
         var result = ParseValue();
         if (_tokenizer.Kind != TokenKind.End)
+        {
             Fail("unexpected trailing input");
+        }
+
         return result;
     }
 
@@ -49,20 +32,20 @@ internal sealed class ExpressionParser
         {
             case TokenKind.String:
             {
-                var value = _tokenizer.Value;
+                string value = _tokenizer.Value;
                 _tokenizer.Next();
                 return Constant(ExpressionValue.From(value));
             }
             case TokenKind.Number:
             {
-                var value = double.Parse(_tokenizer.Value, System.Globalization.CultureInfo.InvariantCulture);
+                double value = double.Parse(_tokenizer.Value, System.Globalization.CultureInfo.InvariantCulture);
                 _tokenizer.Next();
                 return Constant(ExpressionValue.From(value));
             }
             case TokenKind.Reference:
             {
-                var path = _tokenizer.Value;
-                var segments = SplitReference(path);
+                string path = _tokenizer.Value;
+                string[] segments = SplitReference(path);
                 _tokenizer.Next();
                 // Split once here rather than on every resolution, and specialise the
                 // single-segment case, mirroring upstream's referenceEvaluator.
@@ -74,12 +57,18 @@ internal sealed class ExpressionParser
                 return ParseList();
             case TokenKind.Identifier:
             {
-                var identifier = _tokenizer.Value;
+                string identifier = _tokenizer.Value;
                 _tokenizer.Next();
                 if (identifier.Equals("true", StringComparison.OrdinalIgnoreCase))
+                {
                     return Constant(ExpressionValue.From(true));
+                }
+
                 if (identifier.Equals("false", StringComparison.OrdinalIgnoreCase))
+                {
                     return Constant(ExpressionValue.From(false));
+                }
+
                 return ParseCall(identifier);
             }
             default:
@@ -105,14 +94,20 @@ internal sealed class ExpressionParser
         }
 
         if (_tokenizer.Kind != TokenKind.CloseBracket)
+        {
             Fail("expected closing bracket");
+        }
+
         _tokenizer.Next();
         var items = values.ToArray();
         return model =>
         {
             var results = new ExpressionValue[items.Length];
-            for (var index = 0; index < items.Length; index++)
+            for (int index = 0; index < items.Length; index++)
+            {
                 results[index] = items[index](model);
+            }
+
             return ExpressionValue.FromArray(results);
         };
     }
@@ -120,19 +115,32 @@ internal sealed class ExpressionParser
     private Evaluator ParseCall(string name)
     {
         if (_tokenizer.Kind != TokenKind.OpenParen)
+        {
             Fail("invalid operator: " + name);
+        }
 
-        var operation = name.ToLowerInvariant();
-        var arity = GetArity(operation);
+        string operation = name.ToLowerInvariant();
+        int arity = GetArity(operation);
         _tokenizer.Next();
         if (_tokenizer.Kind == TokenKind.CloseParen)
+        {
             Fail("missing operator argument");
+        }
 
         var arguments = new List<Evaluator> { ParseValue() };
         if (arity == -1)
         {
             if (_tokenizer.Kind != TokenKind.Comma)
-                Fail("operator " + name + " expects at least two arguments");
+            {
+                if (_tokenizer.Kind != TokenKind.CloseParen || !SupportsSingleListArgument(operation))
+                {
+                    Fail("operator " + name + " expects at least two arguments");
+                }
+
+                _tokenizer.Next();
+                return Compile(operation, arguments);
+            }
+
             while (_tokenizer.Kind == TokenKind.Comma)
             {
                 _tokenizer.Next();
@@ -144,14 +152,20 @@ internal sealed class ExpressionParser
             while (arguments.Count < arity)
             {
                 if (_tokenizer.Kind != TokenKind.Comma)
+                {
                     Fail("operator " + name + " expects " + ArityText(arity));
+                }
+
                 _tokenizer.Next();
                 arguments.Add(ParseValue());
             }
         }
 
         if (_tokenizer.Kind != TokenKind.CloseParen)
+        {
             Fail("operator " + name + " expects " + (arity == -1 ? "at least two arguments" : ArityText(arity)));
+        }
+
         _tokenizer.Next();
         return Compile(operation, arguments);
     }
@@ -160,10 +174,11 @@ internal sealed class ExpressionParser
     {
         return operation switch
         {
-            "not" or "empty" or "len" or "lower" or "upper" or "trim" or "defined" => 1,
-            "eq" or "contains" or "startswith" or "endswith" or "gt" or "lt" or "match" or "in" => 2,
+            "not" or "empty" or "len" or "lower" or "upper" or "trim" or "defined" or "int" or "num" or "abs" or "floor" or "ceil" or "sqrt" => 1,
+            "eq" or "contains" or "startswith" or "endswith" or "gt" or "lt" or "match" or "in" or "round" or "pow" => 2,
+            "clamp" => 3,
             "if" => 3,
-            "and" or "or" or "concat" => -1,
+            "and" or "or" or "concat" or "add" or "sub" or "mul" or "div" or "mod" or "min" or "max" => -1,
             _ => FailArity(operation),
         };
     }
@@ -174,7 +189,7 @@ internal sealed class ExpressionParser
         return 0;
     }
 
-    private Evaluator Compile(string operation, List<Evaluator> arguments)
+    private static Evaluator Compile(string operation, List<Evaluator> arguments)
     {
         return operation switch
         {
@@ -185,6 +200,12 @@ internal sealed class ExpressionParser
             "upper" => model => ExpressionValue.From(ToFalsyString(arguments[0](model)).ToUpperInvariant()),
             "trim" => model => Trim(arguments[0](model)),
             "defined" => model => ExpressionValue.From(arguments[0](model).Kind is not (ExpressionValueKind.Missing or ExpressionValueKind.Null)),
+            "int" => model => ExpressionValue.From(Math.Truncate(arguments[0](model).ToNumber())),
+            "num" => model => ExpressionValue.From(arguments[0](model).ToNumber()),
+            "abs" => model => ExpressionValue.From(Math.Abs(arguments[0](model).ToNumber())),
+            "floor" => model => ExpressionValue.From(Math.Floor(arguments[0](model).ToNumber())),
+            "ceil" => model => ExpressionValue.From(Math.Ceiling(arguments[0](model).ToNumber())),
+            "sqrt" => model => ExpressionValue.From(Math.Sqrt(arguments[0](model).ToNumber())),
             "eq" => model => ExpressionValue.From(LooseEquals(arguments[0](model), arguments[1](model))),
             "contains" => model => ExpressionValue.From(Contains(arguments[0](model), arguments[1](model))),
             "startswith" => model => ExpressionValue.From(StartsWith(arguments[0](model), arguments[1](model))),
@@ -197,8 +218,140 @@ internal sealed class ExpressionParser
             "or" => model => EvaluateOr(arguments, model),
             "concat" => CompileConcat(arguments),
             "if" => model => arguments[0](model).IsTruthy() ? arguments[1](model) : arguments[2](model),
+            "round" => model => Round(arguments[0](model), arguments[1](model)),
+            "pow" => model => ExpressionValue.From(Math.Pow(arguments[0](model).ToNumber(), arguments[1](model).ToNumber())),
+            "clamp" => model => ExpressionValue.From(Math.Min(Math.Max(arguments[0](model).ToNumber(), arguments[1](model).ToNumber()), arguments[2](model).ToNumber())),
+            "add" => CompileNumericVariadic(arguments, NumericOperation.Add, "add"),
+            "sub" => CompileNumericVariadic(arguments, NumericOperation.Subtract, "sub"),
+            "mul" => CompileNumericVariadic(arguments, NumericOperation.Multiply, "mul"),
+            "div" => CompileNumericVariadic(arguments, NumericOperation.Divide, "div"),
+            "mod" => CompileNumericVariadic(arguments, NumericOperation.Modulo, "mod"),
+            "min" => CompileNumericVariadic(arguments, NumericOperation.Minimum, "min"),
+            "max" => CompileNumericVariadic(arguments, NumericOperation.Maximum, "max"),
             _ => throw new InvalidOperationException("Unknown operator: " + operation),
         };
+    }
+
+    private enum NumericOperation { Add, Subtract, Multiply, Divide, Modulo, Minimum, Maximum }
+
+    private static bool SupportsSingleListArgument(string operation)
+        => operation is "add" or "mul" or "min" or "max";
+
+    private static Evaluator CompileNumericVariadic(List<Evaluator> arguments, NumericOperation operation, string name)
+    {
+        return model =>
+        {
+            var values = new List<double>();
+            foreach (var argument in arguments)
+            {
+                var value = argument(model);
+                if (operation is NumericOperation.Add or NumericOperation.Multiply or NumericOperation.Minimum or NumericOperation.Maximum
+                    && arguments.Count == 1)
+                {
+                    if (value.Kind != ExpressionValueKind.Array || !ExpressionModel.TryGetArrayValues(value, out var items))
+                    {
+                        throw new InvalidOperationException("operator " + name + " expects at least two arguments");
+                    }
+
+                    foreach (var item in items)
+                    {
+                        values.Add(item.ToNumber());
+                    }
+                }
+                else if (operation is NumericOperation.Add or NumericOperation.Multiply or NumericOperation.Minimum or NumericOperation.Maximum
+                    && value.Kind == ExpressionValueKind.Array && ExpressionModel.TryGetArrayValues(value, out var expanded))
+                {
+                    foreach (var item in expanded)
+                    {
+                        values.Add(item.ToNumber());
+                    }
+                }
+                else
+                {
+                    values.Add(value.ToNumber());
+                }
+            }
+
+            if (operation is NumericOperation.Minimum or NumericOperation.Maximum && values.Count == 0)
+            {
+                throw new InvalidOperationException(operation == NumericOperation.Minimum ? "Min requires at least one value" : "Max requires at least one value");
+            }
+
+            double result = values.Count == 0 ? 0d : values[0];
+            int start = 1;
+            if (operation == NumericOperation.Add)
+            {
+                result = 0;
+            }
+
+            if (operation == NumericOperation.Multiply)
+            {
+                result = 1;
+            }
+
+            if (operation is NumericOperation.Add or NumericOperation.Multiply)
+            {
+                start = 0;
+            }
+
+            for (int index = start; index < values.Count; index++)
+            {
+                double value = values[index];
+                switch (operation)
+                {
+                    case NumericOperation.Add:
+                        result += value;
+                        break;
+                    case NumericOperation.Subtract:
+                        result -= value;
+                        break;
+                    case NumericOperation.Multiply:
+                        result *= value;
+                        break;
+                    case NumericOperation.Divide:
+                        if (value == 0)
+                        {
+                            throw new InvalidOperationException("Division by zero");
+                        }
+
+                        result /= value;
+                        break;
+                    case NumericOperation.Modulo:
+                        if (value == 0)
+                        {
+                            throw new InvalidOperationException("Division by zero");
+                        }
+
+                        result %= value;
+                        break;
+                    case NumericOperation.Minimum:
+                        result = Math.Min(result, value);
+                        break;
+                    case NumericOperation.Maximum:
+                        result = Math.Max(result, value);
+                        break;
+                }
+            }
+
+            return ExpressionValue.From(result);
+        };
+    }
+
+    private static ExpressionValue Round(ExpressionValue value, ExpressionValue decimals)
+    {
+        double places = decimals.ToNumber();
+        if (double.IsNaN(places) || double.IsInfinity(places) || places != Math.Truncate(places) || places < 0 || places > 9007199254740991d)
+        {
+            throw new InvalidOperationException("Round precision must be a non-negative safe integer");
+        }
+
+        double factor = Math.Pow(10, places);
+        if (double.IsInfinity(factor))
+        {
+            throw new InvalidOperationException("Round precision is too large");
+        }
+
+        return ExpressionValue.From(Math.Floor((value.ToNumber() * factor) + 0.5) / factor);
     }
 
     private static Evaluator CompileMatch(Evaluator input, Evaluator pattern)
@@ -216,42 +369,20 @@ internal sealed class ExpressionParser
         };
     }
 
-    private const int RuntimePatternCacheLimit = 64;
-    private static readonly Dictionary<string, Regex> RuntimePatterns = new(StringComparer.Ordinal);
+    internal static void ClearRuntimePatterns() => RuntimeRegexCache.Clear();
 
-    /// <summary>
-    /// Compiling a <see cref="Regex"/> is expensive and a model-supplied pattern is almost
-    /// always the same one every time, so keep a small bounded cache rather than rebuilding it
-    /// on every evaluation. The cache is cleared wholesale when full: patterns come from model
-    /// data, so an unbounded cache would be caller-controlled growth.
-    /// </summary>
-    private static Regex GetRuntimeRegex(string pattern)
-    {
-        lock (RuntimePatterns)
-        {
-            if (RuntimePatterns.TryGetValue(pattern, out var cached))
-                return cached;
-        }
-
-        var regex = new Regex(pattern, RegexOptions.CultureInvariant);
-
-        lock (RuntimePatterns)
-        {
-            if (RuntimePatterns.Count >= RuntimePatternCacheLimit)
-                RuntimePatterns.Clear();
-            RuntimePatterns[pattern] = regex;
-        }
-
-        return regex;
-    }
+    private static Regex GetRuntimeRegex(string pattern) => RuntimeRegexCache.Get(pattern);
 
     private static ExpressionValue EvaluateAnd(List<Evaluator> arguments, ExpressionModel model)
     {
         foreach (var argument in arguments)
         {
             if (!argument(model).IsTruthy())
+            {
                 return ExpressionValue.From(false);
+            }
         }
+
         return ExpressionValue.From(true);
     }
 
@@ -260,38 +391,49 @@ internal sealed class ExpressionParser
         foreach (var argument in arguments)
         {
             if (argument(model).IsTruthy())
+            {
                 return ExpressionValue.From(true);
+            }
         }
+
         return ExpressionValue.From(false);
     }
 
     private static ExpressionValue EvaluateConcat(List<Evaluator> arguments, ExpressionModel model)
     {
-        var result = string.Empty;
+        string result = string.Empty;
         foreach (var argument in arguments)
         {
             var value = argument(model);
             if (value.IsTruthy())
+            {
                 result += value.ToJavaScriptString();
+            }
         }
+
         return ExpressionValue.From(result);
     }
 
     private static Evaluator CompileConcat(List<Evaluator> arguments)
     {
         var constants = new ExpressionValue[arguments.Count];
-        for (var index = 0; index < arguments.Count; index++)
+        for (int index = 0; index < arguments.Count; index++)
         {
             if (!TryGetConstant(arguments[index], out constants[index]))
+            {
                 return model => EvaluateConcat(arguments, model);
+            }
         }
 
-        var result = string.Empty;
+        string result = string.Empty;
         foreach (var value in constants)
         {
             if (value.IsTruthy())
+            {
                 result += value.ToJavaScriptString();
+            }
         }
+
         return Constant(ExpressionValue.From(result));
     }
 
@@ -308,12 +450,15 @@ internal sealed class ExpressionParser
         return false;
     }
 
-    private static bool IsEmpty(ExpressionValue value) => value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || value.Kind == ExpressionValueKind.String && ((string)value.Value!).Length == 0;
+    private static bool IsEmpty(ExpressionValue value) => value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || (value.Kind == ExpressionValueKind.String && ((string)value.Value!).Length == 0);
     private static string ToFalsyString(ExpressionValue value) => value.IsTruthy() ? value.ToJavaScriptString() : string.Empty;
     private static ExpressionValue Trim(ExpressionValue value)
     {
         if (value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
+        {
             return value;
+        }
+
         return ExpressionValue.From(ToFalsyString(value).Trim());
     }
 
@@ -325,11 +470,20 @@ internal sealed class ExpressionParser
     private static ExpressionValue Length(ExpressionValue value)
     {
         if (value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
+        {
             return ExpressionValue.From(0d);
+        }
+
         if (value.Kind == ExpressionValueKind.String)
+        {
             return ExpressionValue.From((double)((string)value.Value!).Length);
+        }
+
         if (ExpressionModel.TryGetOwnLength(value, out var length))
+        {
             return length;
+        }
+
         throw new InvalidOperationException("Input does not have a length");
     }
 
@@ -340,6 +494,7 @@ internal sealed class ExpressionParser
     private static bool LooseEquals(ExpressionValue left, ExpressionValue right, int depth)
     {
         if (left.Kind == right.Kind)
+        {
             return left.Kind switch
             {
                 ExpressionValueKind.Missing or ExpressionValueKind.Null => true,
@@ -349,34 +504,61 @@ internal sealed class ExpressionParser
                 ExpressionValueKind.Array => StructuralArrayEquals(left, right, depth),
                 _ => StructuralObjectEquals(left, right, depth),
             };
+        }
+
         if ((left.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null) && (right.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null))
+        {
             return true;
+        }
+
         if (left.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || right.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
+        {
             return false;
+        }
+
         if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+        {
             return LooseEquals(ExpressionValue.From(left.ToJavaScriptString()), right);
+        }
+
         if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+        {
             return LooseEquals(left, ExpressionValue.From(right.ToJavaScriptString()));
-        if (left.Kind == ExpressionValueKind.Boolean || right.Kind == ExpressionValueKind.Boolean || left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String || left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number)
+        }
+
+        if (left.Kind == ExpressionValueKind.Boolean || right.Kind == ExpressionValueKind.Boolean || (left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String) || (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number))
+        {
             return left.ToNumber() == right.ToNumber();
+        }
+
         return false;
     }
 
     private static bool StructuralArrayEquals(ExpressionValue left, ExpressionValue right, int depth)
     {
         if (ReferenceEquals(left.Value, right.Value))
+        {
             return true;
+        }
+
         if (depth >= MaxStructuralDepth)
+        {
             return false;
+        }
+
         if (!ExpressionModel.TryGetArrayValues(left, out var leftValues) || !ExpressionModel.TryGetArrayValues(right, out var rightValues))
+        {
             return false;
+        }
 
         using var leftEnumerator = leftValues.GetEnumerator();
         using var rightEnumerator = rightValues.GetEnumerator();
         while (leftEnumerator.MoveNext())
         {
             if (!rightEnumerator.MoveNext() || !LooseEquals(leftEnumerator.Current, rightEnumerator.Current, depth + 1))
+            {
                 return false;
+            }
         }
 
         return !rightEnumerator.MoveNext();
@@ -385,21 +567,34 @@ internal sealed class ExpressionParser
     private static bool StructuralObjectEquals(ExpressionValue left, ExpressionValue right, int depth)
     {
         if (ReferenceEquals(left.Value, right.Value))
+        {
             return true;
+        }
+
         if (depth >= MaxStructuralDepth)
+        {
             return false;
+        }
+
         if (!ExpressionModel.TryGetObjectEntries(left, out var leftEntries) || !ExpressionModel.TryGetObjectEntries(right, out var rightEntries))
+        {
             return false;
+        }
 
         var rightByName = new Dictionary<string, ExpressionValue>(StringComparer.Ordinal);
         foreach (var entry in rightEntries)
+        {
             rightByName[entry.Key] = entry.Value;
+        }
 
-        var count = 0;
+        int count = 0;
         foreach (var entry in leftEntries)
         {
             if (!rightByName.TryGetValue(entry.Key, out var other) || !LooseEquals(entry.Value, other, depth + 1))
+            {
                 return false;
+            }
+
             count++;
         }
 
@@ -409,23 +604,34 @@ internal sealed class ExpressionParser
     private static int Compare(ExpressionValue left, ExpressionValue right)
     {
         if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+        {
             left = ExpressionValue.From(left.ToJavaScriptString());
+        }
+
         if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+        {
             right = ExpressionValue.From(right.ToJavaScriptString());
+        }
+
         if (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.String)
+        {
             return string.CompareOrdinal((string)left.Value!, (string)right.Value!);
-        var leftNumber = left.ToNumber();
-        var rightNumber = right.ToNumber();
+        }
+
+        double leftNumber = left.ToNumber();
+        double rightNumber = right.ToNumber();
         return double.IsNaN(leftNumber) || double.IsNaN(rightNumber) ? 0 : leftNumber.CompareTo(rightNumber);
     }
 
     private static string[] SplitReference(string path)
     {
-        var segments = path.Split('.');
-        foreach (var segment in segments)
+        string[] segments = path.Split('.');
+        foreach (string? segment in segments)
         {
-            if (segment.Length == 0 || UnsafeReferenceSegments.Contains(segment))
+            if (segment.Length == 0 || s_unsafeReferenceSegments.Contains(segment))
+            {
                 throw ExpressionParseException.WithoutPosition("invalid model reference: #" + path);
+            }
         }
 
         return segments;
@@ -434,114 +640,9 @@ internal sealed class ExpressionParser
     private static string ArityText(int arity) => arity switch { 1 => "one argument", 2 => "two arguments", _ => "three arguments" };
     private void Fail(string message) => throw new ExpressionParseException(message, _tokenizer.Position);
 
-    private sealed class ConstantEvaluator
+    private sealed class ConstantEvaluator(ExpressionValue value)
     {
-        public ConstantEvaluator(ExpressionValue value) => Value = value;
-        public ExpressionValue Value { get; }
+        public ExpressionValue Value { get; } = value;
         public ExpressionValue Evaluate(ExpressionModel _) => Value;
-    }
-
-    private sealed class Tokenizer
-    {
-        private readonly string _source;
-        private int _index;
-
-        public Tokenizer(string source)
-        {
-            _source = source;
-            Next();
-        }
-
-        public TokenKind Kind { get; private set; }
-        public string Value { get; private set; } = string.Empty;
-        public int Position => _index;
-
-        public void Next()
-        {
-            while (_index < _source.Length && _source[_index] <= ' ')
-                _index++;
-            if (_index == _source.Length)
-            {
-                Kind = TokenKind.End;
-                Value = string.Empty;
-                return;
-            }
-
-            var start = _index;
-            switch (_source[_index])
-            {
-                case '(' : Set(TokenKind.OpenParen, "(", 1); return;
-                case ')' : Set(TokenKind.CloseParen, ")", 1); return;
-                case ',' : Set(TokenKind.Comma, ",", 1); return;
-                case '[' : Set(TokenKind.OpenBracket, "[", 1); return;
-                case ']' : Set(TokenKind.CloseBracket, "]", 1); return;
-                case '#':
-                    _index++;
-                    ReadDelimited();
-                    if (_index == start + 1) Fail("missing model reference");
-                    Kind = TokenKind.Reference;
-                    Value = _source.Substring(start + 1, _index - start - 1);
-                    return;
-                case '`':
-                case '\'':
-                case '"': ReadString(_source[_index]); return;
-            }
-
-            if (IsIdentifierLetter(_source[_index]))
-            {
-                _index++;
-                while (_index < _source.Length && IsIdentifierLetter(_source[_index])) _index++;
-                Kind = TokenKind.Identifier;
-                Value = _source.Substring(start, _index - start);
-                return;
-            }
-
-            ReadDelimited();
-            Value = _source.Substring(start, _index - start);
-            if (NumberPattern.IsMatch(Value))
-            {
-                Kind = TokenKind.Number;
-                return;
-            }
-            Fail("unexpected token " + Value);
-        }
-
-        private void ReadDelimited()
-        {
-            while (_index < _source.Length && _source[_index] is not '(' and not ')' and not ',' and not '[' and not ']' && _source[_index] > ' ')
-                _index++;
-        }
-
-        private void ReadString(char quote)
-        {
-            var start = ++_index;
-            var slashCount = 0;
-            while (_index < _source.Length)
-            {
-                var character = _source[_index];
-                if (character == '\\') { slashCount++; _index++; continue; }
-                if (character == quote && slashCount % 2 == 0)
-                {
-                    Kind = TokenKind.String;
-                    Value = _source.Substring(start, _index - start);
-                    _index++;
-                    return;
-                }
-                slashCount = 0;
-                _index++;
-            }
-            Fail("unterminated string");
-        }
-
-        private void Set(TokenKind kind, string value, int length)
-        {
-            Kind = kind;
-            Value = value;
-            _index += length;
-        }
-
-        private static bool IsIdentifierLetter(char character) => character is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
-
-        private void Fail(string message) => throw new ExpressionParseException(message, _index);
     }
 }

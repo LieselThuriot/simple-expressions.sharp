@@ -25,9 +25,11 @@ internal sealed class ExpressionModel
     public ExpressionValue ResolveSingle(string name)
     {
         if (_root is null)
+        {
             return ExpressionValue.Missing;
+        }
 
-        return ModelAccessor.TryGetMember(_root, name, out var value) ? Convert(value) : ExpressionValue.Missing;
+        return ModelAccessor.TryGetMember(_root, name, out object? value) ? Convert(value) : ExpressionValue.Missing;
     }
 
     /// <summary>
@@ -37,16 +39,22 @@ internal sealed class ExpressionModel
     public ExpressionValue Resolve(string path, string[] segments)
     {
         if (_root is null)
+        {
             return ExpressionValue.Missing;
+        }
 
-        if (ModelAccessor.TryGetMember(_root, path, out var dotted))
+        if (ModelAccessor.TryGetMember(_root, path, out object? dotted))
+        {
             return Convert(dotted);
+        }
 
-        var value = _root;
-        foreach (var segment in segments)
+        object? value = _root;
+        foreach (string segment in segments)
         {
             if (value is null || !ModelAccessor.TryGetMember(value, segment, out value))
+            {
                 return ExpressionValue.Missing;
+            }
         }
 
         return Convert(value);
@@ -62,7 +70,7 @@ internal sealed class ExpressionModel
 
         // Upstream reads an own `length` member; on a model object that is an ordinary member
         // lookup, so `new { length = 4 }` has a length and `new { Length = 4 }` does not.
-        if (value.Kind == ExpressionValueKind.Object && ModelAccessor.TryGetMember(value.Value!, "length", out var member))
+        if (value.Kind == ExpressionValueKind.Object && ModelAccessor.TryGetMember(value.Value!, "length", out object? member))
         {
             length = Convert(member);
             return true;
@@ -76,7 +84,7 @@ internal sealed class ExpressionModel
     {
         if (value.Kind != ExpressionValueKind.Array)
         {
-            values = Enumerable.Empty<ExpressionValue>();
+            values = [];
             return false;
         }
 
@@ -96,7 +104,7 @@ internal sealed class ExpressionModel
     {
         if (value.Kind != ExpressionValueKind.Object)
         {
-            entries = Enumerable.Empty<KeyValuePair<string, ExpressionValue>>();
+            entries = [];
             return false;
         }
 
@@ -107,7 +115,9 @@ internal sealed class ExpressionModel
     public static string ArrayToString(object value)
     {
         if (value is IReadOnlyList<ExpressionValue> expressionValues)
+        {
             return string.Join(",", expressionValues.Select(ItemToString));
+        }
 
         return string.Join(",", ConvertItems((IEnumerable)value).Select(ItemToString));
     }
@@ -117,24 +127,33 @@ internal sealed class ExpressionModel
 
     private static IEnumerable<ExpressionValue> ConvertItems(IEnumerable source)
     {
-        foreach (var item in source)
+        foreach (object? item in source)
+        {
             yield return Convert(item);
+        }
     }
 
     private static IEnumerable<KeyValuePair<string, ExpressionValue>> ConvertEntries(object source)
     {
         foreach (var entry in ModelAccessor.GetEntries(source))
+        {
             yield return new KeyValuePair<string, ExpressionValue>(entry.Key, Convert(entry.Value));
+        }
     }
 
     private static int Count(object value)
     {
         if (value is ICollection collection)
+        {
             return collection.Count;
+        }
 
-        var count = 0;
-        foreach (var _ in (IEnumerable)value)
+        int count = 0;
+        foreach (object? _ in (IEnumerable)value)
+        {
             count++;
+        }
+
         return count;
     }
 

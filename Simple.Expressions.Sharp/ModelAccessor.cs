@@ -20,14 +20,14 @@ namespace Simple.Expressions;
 /// </remarks>
 internal static class ModelAccessor
 {
-    private static readonly ConcurrentDictionary<Type, MemberAccessor> Accessors = new();
-    private static readonly Func<Type, MemberAccessor> AccessorFactory = Build;
+    private static readonly ConcurrentDictionary<Type, MemberAccessor> s_accessors = new();
+    private static readonly Func<Type, MemberAccessor> s_accessorFactory = Build;
 
     public static bool TryGetMember(object instance, string name, out object? value)
-        => Accessors.GetOrAdd(instance.GetType(), AccessorFactory).TryGet(instance, name, out value);
+        => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).TryGet(instance, name, out value);
 
     public static IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
-        => Accessors.GetOrAdd(instance.GetType(), AccessorFactory).GetEntries(instance);
+        => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).GetEntries(instance);
 
     /// <summary>
     /// Whether a value is keyed rather than sequential. Dictionaries are objects even though
@@ -35,7 +35,7 @@ internal static class ModelAccessor
     /// <see cref="ExpressionModel"/>.
     /// </summary>
     public static bool IsDictionary(object instance)
-        => Accessors.GetOrAdd(instance.GetType(), AccessorFactory).IsDictionary;
+        => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).IsDictionary;
 
     private static MemberAccessor Build(Type type)
     {
@@ -45,11 +45,15 @@ internal static class ModelAccessor
         foreach (var candidate in EnumerateInterfaces(type))
         {
             if (!candidate.IsGenericType || candidate.GetGenericTypeDefinition() != typeof(IDictionary<,>))
+            {
                 continue;
+            }
 
             var arguments = candidate.GetGenericArguments();
             if (arguments[0] != typeof(string))
+            {
                 continue;
+            }
 
             return (MemberAccessor)Activator.CreateInstance(typeof(GenericDictionaryAccessor<>).MakeGenericType(arguments[1]))!;
         }
@@ -57,17 +61,23 @@ internal static class ModelAccessor
         foreach (var candidate in EnumerateInterfaces(type))
         {
             if (!candidate.IsGenericType || candidate.GetGenericTypeDefinition() != typeof(IReadOnlyDictionary<,>))
+            {
                 continue;
+            }
 
             var arguments = candidate.GetGenericArguments();
             if (arguments[0] != typeof(string))
+            {
                 continue;
+            }
 
             return (MemberAccessor)Activator.CreateInstance(typeof(GenericReadOnlyDictionaryAccessor<>).MakeGenericType(arguments[1]))!;
         }
 
         if (typeof(IDictionary).IsAssignableFrom(type))
+        {
             return new NonGenericDictionaryAccessor();
+        }
 
         return new PropertyAccessor(type);
     }
@@ -75,10 +85,14 @@ internal static class ModelAccessor
     private static IEnumerable<Type> EnumerateInterfaces(Type type)
     {
         if (type.IsInterface)
+        {
             yield return type;
+        }
 
         foreach (var candidate in type.GetInterfaces())
+        {
             yield return candidate;
+        }
     }
 
     private abstract class MemberAccessor
@@ -107,7 +121,9 @@ internal static class ModelAccessor
         public override IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
         {
             foreach (var entry in (IDictionary<string, TValue>)instance)
+            {
                 yield return new KeyValuePair<string, object?>(entry.Key, entry.Value);
+            }
         }
     }
 
@@ -130,7 +146,9 @@ internal static class ModelAccessor
         public override IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
         {
             foreach (var entry in (IReadOnlyDictionary<string, TValue>)instance)
+            {
                 yield return new KeyValuePair<string, object?>(entry.Key, entry.Value);
+            }
         }
     }
 
@@ -159,7 +177,9 @@ internal static class ModelAccessor
                 while (enumerator.MoveNext())
                 {
                     if (enumerator.Key is string key)
+                    {
                         yield return new KeyValuePair<string, object?>(key, enumerator.Value);
+                    }
                 }
             }
             finally
@@ -187,11 +207,15 @@ internal static class ModelAccessor
                 // Indexers are not addressable by name, and a property without a public getter
                 // was never part of the serialized shape.
                 if (property.GetIndexParameters().Length != 0 || property.GetGetMethod() is null)
+                {
                     continue;
+                }
 
                 // A shadowed property (`new`) appears twice; the most derived one comes first.
                 if (!_getters.ContainsKey(property.Name))
+                {
                     _getters.Add(property.Name, CreateGetter(property));
+                }
             }
         }
 
@@ -210,7 +234,9 @@ internal static class ModelAccessor
         public override IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
         {
             foreach (var getter in _getters)
+            {
                 yield return new KeyValuePair<string, object?>(getter.Key, getter.Value(instance));
+            }
         }
 
         private static Func<object, object?> CreateGetter(PropertyInfo property)

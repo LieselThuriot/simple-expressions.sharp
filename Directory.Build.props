@@ -4,8 +4,4 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<Using Alias="SimpleType" Include="Simple.Expressions.FluentType&lt;bool, int, string&gt;"/>
-		<Using Alias="ExpressionType" Include="Simple.Expressions.FluentType&lt;bool, string&gt;"/>
-	</ItemGroup>
 </Project>

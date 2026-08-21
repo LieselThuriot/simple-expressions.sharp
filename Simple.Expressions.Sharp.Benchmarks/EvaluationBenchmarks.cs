@@ -47,8 +47,10 @@ public class EvaluationBenchmarks
         SimpleExpressions.ExecuteExpression(_smallModel, SimpleRule);
         SimpleExpressions.ExecuteExpression(_smallModel, DottedRule);
         SimpleExpressions.ExecuteExpression(_smallModel, MembershipRule);
-        foreach (var rule in RuleSet)
+        foreach (string rule in RuleSet)
+        {
             SimpleExpressions.ParseExpression(rule)(_smallModel);
+        }
     }
 
     [Benchmark(Baseline = true, Description = "One rule, small model")]
@@ -60,24 +62,30 @@ public class EvaluationBenchmarks
     [Benchmark(Description = "20 rules, one small model")]
     public int RuleSet_SmallModel()
     {
-        var matched = 0;
-        foreach (var rule in RuleSet)
+        int matched = 0;
+        foreach (string rule in RuleSet)
         {
             if (SimpleExpressions.ExecuteExpression(_smallModel, rule))
+            {
                 matched++;
+            }
         }
+
         return matched;
     }
 
     [Benchmark(Description = "20 rules, one large model")]
     public int RuleSet_LargeModel()
     {
-        var matched = 0;
-        foreach (var rule in RuleSet)
+        int matched = 0;
+        foreach (string rule in RuleSet)
         {
             if (SimpleExpressions.ExecuteExpression(_largeModel, rule))
+            {
                 matched++;
+            }
         }
+
         return matched;
     }
 
@@ -98,7 +106,7 @@ public class EvaluationBenchmarks
         // Payload is never referenced by any expression. Under the serializing implementation
         // it is walked on every evaluation regardless; under lazy access it should be free.
         var payload = new Dictionary<string, object?>(StringComparer.Ordinal);
-        for (var index = 0; index < payloadEntries; index++)
+        for (int index = 0; index < payloadEntries; index++)
         {
             payload["field" + index] = new
             {

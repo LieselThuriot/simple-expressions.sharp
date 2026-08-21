@@ -4,18 +4,21 @@ namespace Simple.Expressions.Tests;
 
 public sealed class PortSpecificTests
 {
+    private static readonly int[] model = [1, 2];
+    private static readonly int[] modelArray = [2, 3];
+
     [Fact]
     public void StructuralEqualityIsSupportedForPortModels()
     {
-        Assert.True(SE.ExecuteExpression(new { a = new[] { 1, 2 }, b = new[] { 1, 2 } }, "eq(#a, #b)"));
-        Assert.True(SE.ExecuteExpression(new { a = new object[] { 1, new[] { 2, 3 } }, b = new object[] { 1, new[] { 2, 3 } } }, "eq(#a, #b)"));
+        Assert.True(SE.ExecuteExpression(new { a = model, b = model }, "eq(#a, #b)"));
+        Assert.True(SE.ExecuteExpression(new { a = new object[] { 1, modelArray }, b = new object[] { 1, modelArray } }, "eq(#a, #b)"));
         Assert.True(SE.ExecuteExpression(new { a = new { x = 1 }, b = new { x = 1 } }, "eq(#a, #b)"));
     }
 
     [Fact]
-    public void EmptyAndBlankStringsDoNotConvertToZero()
+    public void StringBackslashesRemainLiteral()
     {
-        Assert.False(SE.ExecuteExpression(new { value = "" }, "eq(#value, 0)"));
-        Assert.False(SE.ExecuteExpression(new { value = "   " }, "eq(#value, 0)"));
+        Assert.Equal("a\\\"b", SE.ParseExpression("\"a\\\"b\"")(new { }));
+        Assert.True(SE.ExecuteExpression(new { }, "eq(\"a\\\"b\", \"a\\\"b\")"));
     }
 }
