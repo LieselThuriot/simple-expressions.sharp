@@ -3,9 +3,9 @@
 ![simple-expressions logo](https://raw.githubusercontent.com/LieselThuriot/simple-expressions.sharp/main/simple-expressions.png)
 
 [![NuGet](https://img.shields.io/nuget/v/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
-[![license](https://img.shields.io/npm/l/simple-expressions.svg)](https://www.nuget.org/packages/simple-expressions)
+[![license](https://img.shields.io/github/license/LieselThuriot/simple-expressions.sharp.svg)](https://github.com/LieselThuriot/simple-expressions.sharp/blob/main/LICENSE)
 
-C# port of [simple-expressions](https://github.com/LieselThuriot/simple-expressions). It follows the reference project's current grammar and evaluation semantics.
+C# port of [simple-expressions](https://github.com/LieselThuriot/simple-expressions). It implements the shared v1 contract with documented CLR and .NET regular-expression differences.
 
 ## Install
 
@@ -29,11 +29,13 @@ evaluator(model);
 // "Hello, Ada"
 ```
 
-`ExecuteExpression` and `SimpleExpression.Evaluate` return the expression's truthiness. `ParseExpression` returns a reusable evaluator and keeps scalar results intact. Missing and null values appear as `null` at the public API boundary.
+`ExecuteExpression` and `SimpleExpression.Evaluate` return the expression's truthiness. `ParseExpression` returns a reusable evaluator and keeps scalar results intact. `new SimpleExpression(string or bool)` is also available for direct use; call `EvaluateValue` for the raw result. `SimpleExpressions.Get` returns a cached reusable expression. Missing and null values appear as `null` at the public API boundary.
+
+The library targets `netstandard2.0`.
 
 ## Demo
 
-The interactive playground is available at [simple-expressions.liesel.dev](https://simple-expressions.liesel.dev/). It uses the same expression grammar and evaluation behavior.
+The interactive playground is available at [simple-expressions.liesel.dev](https://simple-expressions.liesel.dev/). It demonstrates the TypeScript reference implementation; the C# port follows the shared grammar with documented CLR and .NET differences.
 
 To run the C# console sample from this repository:
 
@@ -45,23 +47,23 @@ dotnet run --project Simple.Expressions.Sharp.Sample
 
 Constants support case-insensitive Booleans, signed, decimal, and exponent numeric literals, single-, double-, or backtick-quoted strings, and recursive list literals in square brackets. References begin with `#`. For a dotted reference, the evaluator first checks for an exact dotted key and then traverses nested object properties. References cannot contain empty segments or the reserved segments `__proto__`, `constructor`, and `prototype`; these restrictions are retained for compatibility with the TypeScript reference.
 
-Operators are case-insensitive:
+Operators are case-insensitive. `and` and `or` are variadic and short-circuit. `if` is lazy and evaluates only its selected branch. `in` requires a list; `contains`, `startswith`, and `endswith` require a string left operand. `len` returns `0` for nullish values, a string/array length, or an exact `length` property, and throws otherwise.
 
-`not`, `empty`, `len`, `lower`, `upper`, `trim`, `defined`, `int`, `num`, `abs`, `floor`, `ceil`, `sqrt`, `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, `pow`, `clamp`, variadic `and`/`or`/`concat`/`add`/`sub`/`mul`/`div`/`mod`/`min`/`max`, and lazy `if`.
+`not`, `empty`, `defined`, `lower`, `upper`, `trim`, `int`, `num`, `abs`, `floor`, `ceil`, and `sqrt` take one argument. `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, and `pow` take two. `clamp` and `if` take three. `concat`, `add`, `sub`, `mul`, `div`, `mod`, `min`, and `max` take two or more; `add`, `mul`, `min`, and `max` also accept one list and expand lists one level.
 
 `in` requires a list and uses the same loose equality as `eq`. `trim` preserves null and missing values; other falsey values become empty strings before trimming. `defined` is false only for null and missing values. Lists may contain nested lists, model references, and operator expressions.
 
-The numeric operators coerce values to numbers. `add`, `mul`, `min`, and `max` accept a single list argument and expand it one level; `add([])` is zero and `mul([])` is one. `div` and `mod` throw for zero divisors. `round` requires a non-negative safe integer precision.
+Numeric operators strictly convert values to numbers and throw `Invalid numeric value` for empty, blank, or invalid strings. `add`, `mul`, `min`, and `max` accept a single list argument and expand list arguments one level; `add([])` is zero and `mul([])` is one. `div` and `mod` throw `Division by zero` for zero divisors. `min` and `max` throw for empty lists. `round` requires a non-negative safe integer precision.
 
-The evaluator uses JavaScript-style truthiness, loose equality, and value conversion where those rules can be represented by .NET values. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable.
+The evaluator uses JavaScript-style truthiness, loose equality, and value conversion where those rules can be represented by .NET values. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable. Empty or non-string patterns return `false`.
 
 ## Differences from the TypeScript reference
 
-This port follows the [TypeScript reference](https://github.com/LieselThuriot/simple-expressions) for grammar, operators, and evaluation order. It does not reproduce every JavaScript coercion quirk. Cross-language compatibility is tested separately in [simple-expressions-conformance](https://github.com/LieselThuriot/simple-expressions-conformance).
+This port follows the [TypeScript reference](https://github.com/LieselThuriot/simple-expressions) for grammar, operators, and evaluation order. The main portability difference is the .NET regex engine and CLR model representation. Cross-language compatibility is tested separately in [simple-expressions-conformance](https://github.com/LieselThuriot/simple-expressions-conformance).
 
 | Behaviour | TypeScript | This port |
 | --- | --- | --- |
-| String to number | Invalid numeric strings throw in numeric operators | Empty, blank, and invalid strings throw in numeric operators |
+| Regex engine | JavaScript regular expressions | .NET regular expressions |
 
 Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
 
@@ -69,7 +71,7 @@ Structural equality applies to lists and objects and is cycle-safe. Loose equali
 
 ## Model access
 
-Models are read by reflection when the expression asks for a value. Nothing is copied or converted up front. A small expression against a large model does not visit the parts it never references. Property getters are compiled and cached per type on first use.
+Models are read by reflection when the expression asks for a value. Nothing is copied or converted up front. A small expression against a large model does not visit the parts it never references. Property access strategies are cached per type; getters are compiled when supported and otherwise use reflection.
 
 Models can be POCOs, anonymous types, `Dictionary<string, object?>` values, read-only string-keyed dictionaries, non-generic dictionaries, or other objects with public instance properties. A dictionary's string keys are its members; every other object's public instance properties are.
 
@@ -77,16 +79,20 @@ Keep these details in mind:
 
 - **Property names are CLR names**, matched ordinally and case-sensitively. This port reads them directly and does not apply `[JsonPropertyName]`, `[JsonIgnore]`, or naming policies. It has no JSON dependency.
 - **Models are read live**, at evaluation time. Mutating a model between evaluations is visible to the next one.
-- **Values use the port's established coercions**: enums become their numeric value, `DateTime`/`DateTimeOffset` become round-trip (`"O"`) strings, `Guid` becomes its `"D"` form, and `byte[]` becomes base64.
+- **Values use the port's established coercions**: numeric primitives become `double`, enums become their numeric value, `char` becomes a string, `DateTime`/`DateTimeOffset` become round-trip (`"O"`) strings, `Guid` becomes its `"D"` form, `Uri` becomes its original string, and `byte[]` becomes base64.
 
-A non-object model root (an array or a primitive) resolves every reference to a missing value.
+A model can be a dictionary or any object with public instance properties. Arrays, strings, and other non-null CLR values may expose public properties when used as roots; missing property names still resolve as missing.
 
 Sequences are read lazily, so `in(...)` can stop at the first match. A single-pass `IEnumerable` may still be enumerated more than once during one evaluation. Use a materialised collection when the sequence cannot be re-enumerated.
 
 ## Caching
 
-Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both caches have a FIFO limit of 1,000 entries. Use `SetCacheLimit` with a value of at least 1 to configure the limit; values below 1 throw. Use `Clear`, `DisableCaches`, and `EnableCaches` to control cache contents and state. Disabling caches also clears existing entries.
+Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both caches have a FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Use `Clear()` or `Clear` with `parsed` and `expression` option keys, `SetCacheLimit` to change the limit, and `DisableCaches`/`EnableCaches` to control cache contents and state. Disabling caches also clears existing entries.
 
 ## Security
 
 Expressions and regex patterns are trusted input. Regex evaluation can be vulnerable to catastrophic backtracking. Do not use untrusted expressions or patterns as an authorization boundary.
+
+## Conformance
+
+This package supports conformance specification v1. The pinned corpus is documented in `CONFORMANCE.md` and initialized at `conformance`.
