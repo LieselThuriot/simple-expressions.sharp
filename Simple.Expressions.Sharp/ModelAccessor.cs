@@ -32,7 +32,7 @@ internal static class ModelAccessor
     /// <summary>
     /// Whether a value is keyed rather than sequential. Dictionaries are objects even though
     /// they are also enumerable, so this decides the object/array split in
-    /// <see cref="ExpressionModel"/>.
+    /// <see cref="ClrValueAdapter"/>.
     /// </summary>
     public static bool IsDictionary(object instance)
         => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).IsDictionary;

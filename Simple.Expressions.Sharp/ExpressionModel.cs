@@ -1,8 +1,5 @@
 #nullable enable
 
-using System.Collections;
-using System.Globalization;
-
 namespace Simple.Expressions;
 
 /// <summary>
@@ -29,7 +26,7 @@ internal sealed class ExpressionModel
             return ExpressionValue.Missing;
         }
 
-        return ModelAccessor.TryGetMember(_root, name, out object? value) ? Convert(value) : ExpressionValue.Missing;
+        return ModelAccessor.TryGetMember(_root, name, out object? value) ? ClrValueAdapter.From(value) : ExpressionValue.Missing;
     }
 
     /// <summary>
@@ -45,7 +42,7 @@ internal sealed class ExpressionModel
 
         if (ModelAccessor.TryGetMember(_root, path, out object? dotted))
         {
-            return Convert(dotted);
+            return ClrValueAdapter.From(dotted);
         }
 
         object? value = _root;
@@ -57,137 +54,6 @@ internal sealed class ExpressionModel
             }
         }
 
-        return Convert(value);
+        return ClrValueAdapter.From(value);
     }
-
-    public static bool TryGetOwnLength(ExpressionValue value, out ExpressionValue length)
-    {
-        if (value.Kind == ExpressionValueKind.Array)
-        {
-            length = ExpressionValue.From((double)Count(value.Value!));
-            return true;
-        }
-
-        // Upstream reads an own `length` member; on a model object that is an ordinary member
-        // lookup, so `new { length = 4 }` has a length and `new { Length = 4 }` does not.
-        if (value.Kind == ExpressionValueKind.Object && ModelAccessor.TryGetMember(value.Value!, "length", out object? member))
-        {
-            length = Convert(member);
-            return true;
-        }
-
-        length = default;
-        return false;
-    }
-
-    public static bool TryGetArrayValues(ExpressionValue value, out IEnumerable<ExpressionValue> values)
-    {
-        if (value.Kind != ExpressionValueKind.Array)
-        {
-            values = [];
-            return false;
-        }
-
-        // List literals already hold converted values.
-        if (value.Value is IReadOnlyList<ExpressionValue> expressionValues)
-        {
-            values = expressionValues;
-            return true;
-        }
-
-        // Deferred, so in() and structural comparison can stop early.
-        values = ConvertItems((IEnumerable)value.Value!);
-        return true;
-    }
-
-    public static bool TryGetObjectEntries(ExpressionValue value, out IEnumerable<KeyValuePair<string, ExpressionValue>> entries)
-    {
-        if (value.Kind != ExpressionValueKind.Object)
-        {
-            entries = [];
-            return false;
-        }
-
-        entries = ConvertEntries(value.Value!);
-        return true;
-    }
-
-    public static string ArrayToString(object value)
-    {
-        if (value is IReadOnlyList<ExpressionValue> expressionValues)
-        {
-            return string.Join(",", expressionValues.Select(ItemToString));
-        }
-
-        return string.Join(",", ConvertItems((IEnumerable)value).Select(ItemToString));
-    }
-
-    private static string ItemToString(ExpressionValue item)
-        => item.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : item.ToJavaScriptString();
-
-    private static IEnumerable<ExpressionValue> ConvertItems(IEnumerable source)
-    {
-        foreach (object? item in source)
-        {
-            yield return Convert(item);
-        }
-    }
-
-    private static IEnumerable<KeyValuePair<string, ExpressionValue>> ConvertEntries(object source)
-    {
-        foreach (var entry in ModelAccessor.GetEntries(source))
-        {
-            yield return new KeyValuePair<string, ExpressionValue>(entry.Key, Convert(entry.Value));
-        }
-    }
-
-    private static int Count(object value)
-    {
-        if (value is ICollection collection)
-        {
-            return collection.Count;
-        }
-
-        int count = 0;
-        foreach (object? _ in (IEnumerable)value)
-        {
-            count++;
-        }
-
-        return count;
-    }
-
-    /// <summary>
-    /// Maps a CLR value onto the JavaScript value model the evaluator works in. The coercions
-    /// for enums, dates, GUIDs and byte arrays deliberately match what the JSON serializer
-    /// produced before, so expressions comparing against ISO date strings or enum numbers keep
-    /// working.
-    /// </summary>
-    private static ExpressionValue Convert(object? value) => value switch
-    {
-        null => ExpressionValue.Null,
-        bool boolean => ExpressionValue.From(boolean),
-        string text => ExpressionValue.From(text),
-        double number => ExpressionValue.From(number),
-        int number => ExpressionValue.From(number),
-        long number => ExpressionValue.From(number),
-        decimal number => ExpressionValue.From((double)number),
-        float number => ExpressionValue.From(number),
-        short number => ExpressionValue.From(number),
-        byte number => ExpressionValue.From(number),
-        sbyte number => ExpressionValue.From(number),
-        ushort number => ExpressionValue.From(number),
-        uint number => ExpressionValue.From(number),
-        ulong number => ExpressionValue.From(number),
-        char character => ExpressionValue.From(character.ToString()),
-        Enum enumeration => ExpressionValue.From(System.Convert.ToDouble(enumeration, CultureInfo.InvariantCulture)),
-        DateTime date => ExpressionValue.From(date.ToString("O", CultureInfo.InvariantCulture)),
-        DateTimeOffset date => ExpressionValue.From(date.ToString("O", CultureInfo.InvariantCulture)),
-        Guid identifier => ExpressionValue.From(identifier.ToString("D", CultureInfo.InvariantCulture)),
-        byte[] bytes => ExpressionValue.From(System.Convert.ToBase64String(bytes)),
-        Uri uri => ExpressionValue.From(uri.OriginalString),
-        // A dictionary is an object, not a sequence of its entries.
-        IEnumerable sequence when !ModelAccessor.IsDictionary(value) => ExpressionValue.FromArray(sequence),
-        _ => ExpressionValue.FromObject(value),
-    };
 }

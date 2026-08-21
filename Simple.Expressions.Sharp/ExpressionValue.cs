@@ -112,9 +112,9 @@ internal readonly struct ExpressionValue
         ExpressionValueKind.Missing => "undefined",
         ExpressionValueKind.Null => "null",
         ExpressionValueKind.Boolean => (bool)Value! ? "true" : "false",
-        ExpressionValueKind.Number => FormatNumber((double)Value!),
+        ExpressionValueKind.Number => JavaScriptNumberFormatter.Format((double)Value!),
         ExpressionValueKind.String => (string)Value!,
-        ExpressionValueKind.Array => ExpressionModel.ArrayToString(Value!),
+        ExpressionValueKind.Array => ClrValueAdapter.ArrayToString(Value!),
         _ => "[object Object]",
     };
 
@@ -126,82 +126,4 @@ internal readonly struct ExpressionValue
         _ => Value,
     };
 
-    private const int PlainNotationMinExponent = -6;
-    private const int PlainNotationMaxExponent = 21;
-
-    /// <summary>
-    /// Renders a double as its shortest round-trip decimal, using plain notation for
-    /// magnitudes in <c>[1e-6, 1e21)</c> and lowercase exponent notation outside that range.
-    /// </summary>
-    private static string FormatNumber(double value)
-    {
-        if (double.IsNaN(value))
-        {
-            return "NaN";
-        }
-
-        if (double.IsPositiveInfinity(value))
-        {
-            return "Infinity";
-        }
-
-        if (double.IsNegativeInfinity(value))
-        {
-            return "-Infinity";
-        }
-
-        if (value == 0)
-        {
-            return "0";
-        }
-
-        string roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
-        int exponentIndex = roundTrip.IndexOf('E');
-        if (exponentIndex < 0)
-        {
-            return roundTrip;
-        }
-
-        string mantissa = roundTrip.Substring(0, exponentIndex);
-        int exponent = int.Parse(roundTrip.Substring(exponentIndex + 1), CultureInfo.InvariantCulture);
-
-        bool negative = mantissa[0] == '-';
-        if (negative)
-        {
-            mantissa = mantissa.Substring(1);
-        }
-
-        int pointIndex = mantissa.IndexOf('.');
-        string digits = pointIndex < 0 ? mantissa : mantissa.Remove(pointIndex, 1);
-        // Decimal exponent of the leading digit, e.g. 1.5E+3 -> 3, 1.5E-7 -> -7.
-        int leadingExponent = exponent + (pointIndex < 0 ? mantissa.Length : pointIndex) - 1;
-
-        string text = leadingExponent >= PlainNotationMinExponent && leadingExponent < PlainNotationMaxExponent
-            ? ToPlainNotation(digits, leadingExponent)
-            : ToExponentNotation(digits, leadingExponent);
-
-        return negative ? "-" + text : text;
-    }
-
-    private static string ToPlainNotation(string digits, int leadingExponent)
-    {
-        if (leadingExponent < 0)
-        {
-            return "0." + new string('0', -leadingExponent - 1) + digits;
-        }
-
-        if (leadingExponent >= digits.Length - 1)
-        {
-            return digits + new string('0', leadingExponent - digits.Length + 1);
-        }
-
-        return digits.Substring(0, leadingExponent + 1) + "." + digits.Substring(leadingExponent + 1);
-    }
-
-    private static string ToExponentNotation(string digits, int leadingExponent)
-    {
-        string mantissa = digits.Length == 1 ? digits : digits.Substring(0, 1) + "." + digits.Substring(1);
-        string sign = leadingExponent < 0 ? "-" : "+";
-        return mantissa + "e" + sign + Math.Abs(leadingExponent).ToString(CultureInfo.InvariantCulture);
-    }
 }

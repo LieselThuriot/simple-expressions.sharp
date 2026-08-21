@@ -80,7 +80,7 @@ public static class SimpleExpressions
             if (clearParsed)
             {
                 s_parseCache.Clear();
-                ExpressionParser.ClearRuntimePatterns();
+                RuntimeRegexCache.Clear();
             }
 
             if (clearExpressions)
