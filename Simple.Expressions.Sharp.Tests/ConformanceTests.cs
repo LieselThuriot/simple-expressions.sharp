@@ -93,6 +93,17 @@ public sealed class ConformanceTests
                 }
 
                 break;
+            case JsonValueKind.Object:
+                var actualObject = Assert.IsAssignableFrom<IDictionary<string, object?>>(actual);
+                var expectedObject = expected.AsObject();
+                Assert.Equal(expectedObject.Count, actualObject.Count);
+                foreach (var property in expectedObject)
+                {
+                    Assert.True(actualObject.ContainsKey(property.Key));
+                    AssertValue(property.Value, actualObject[property.Key]);
+                }
+
+                break;
             default:
                 Assert.Fail("Unsupported expectation kind");
                 break;
