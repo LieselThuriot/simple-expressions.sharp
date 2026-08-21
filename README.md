@@ -61,9 +61,11 @@ This port follows the [TypeScript reference](https://github.com/LieselThuriot/si
 
 | Behaviour | TypeScript | This port |
 | --- | --- | --- |
-| String to number | `Number("")` is `0` | Empty and whitespace strings convert to `0`; other strings convert only if they parse as numbers |
+| String to number | Invalid numeric strings throw in numeric operators | Empty, blank, and invalid strings throw in numeric operators |
 
 Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
+
+Structural equality applies to lists and objects and is cycle-safe. Loose equality remains non-throwing; strict numeric conversion is used by numeric operators.
 
 ## Model access
 

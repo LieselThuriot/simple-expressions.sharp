@@ -16,6 +16,24 @@ public sealed class PortSpecificTests
     }
 
     [Fact]
+    public void StructuralEqualityHandlesCyclicObjects()
+    {
+        var left = new Dictionary<string, object?> { ["value"] = 1 };
+        var right = new Dictionary<string, object?> { ["value"] = 1 };
+        left["self"] = left;
+        right["self"] = right;
+
+        Assert.True(SE.ExecuteExpression(new { left, right }, "eq(#left, #right)"));
+    }
+
+    [Fact]
+    public void SimpleExpressionConstructorsArePublic()
+    {
+        Assert.True(new Simple.Expressions.SimpleExpression(true).Evaluate(new { }));
+        Assert.Equal("ok", new Simple.Expressions.SimpleExpression("\"ok\"").EvaluateValue(new { }));
+    }
+
+    [Fact]
     public void StringBackslashesRemainLiteral()
     {
         Assert.Equal("a\\\"b", SE.ParseExpression("\"a\\\"b\"")(new { }));
