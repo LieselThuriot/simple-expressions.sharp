@@ -202,7 +202,7 @@ internal sealed class ExpressionParser(string expression)
             "trim" => model => Trim(arguments[0](model)),
             "defined" => model => ExpressionValue.From(arguments[0](model).Kind is not (ExpressionValueKind.Missing or ExpressionValueKind.Null)),
             "int" => model => ExpressionValue.From(Math.Truncate(arguments[0](model).ToNumber(true))),
-            "num" => model => ExpressionValue.From(arguments[0](model).ToNumber(true)),
+            "num" => model => ExpressionValue.From(Num(arguments[0](model))),
             "abs" => model => ExpressionValue.From(Math.Abs(arguments[0](model).ToNumber(true))),
             "floor" => model => ExpressionValue.From(Math.Floor(arguments[0](model).ToNumber(true))),
             "ceil" => model => ExpressionValue.From(Math.Ceiling(arguments[0](model).ToNumber(true))),
@@ -365,8 +365,9 @@ internal sealed class ExpressionParser(string expression)
 
         return model =>
         {
+            var runtimeInput = input(model);
             var runtimePattern = pattern(model);
-            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && GetRuntimeRegex((string)runtimePattern.Value!).IsMatch(ToFalsyString(input(model))));
+            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && GetRuntimeRegex((string)runtimePattern.Value!).IsMatch(ToFalsyString(runtimeInput)));
         };
     }
 
@@ -453,6 +454,16 @@ internal sealed class ExpressionParser(string expression)
 
     private static bool IsEmpty(ExpressionValue value) => value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null || (value.Kind == ExpressionValueKind.String && ((string)value.Value!).Length == 0);
     private static string ToFalsyString(ExpressionValue value) => value.IsTruthy() ? value.ToJavaScriptString() : string.Empty;
+    private static double Num(ExpressionValue value)
+    {
+        if (value.Kind == ExpressionValueKind.Array)
+        {
+            throw new InvalidOperationException("Invalid numeric value");
+        }
+
+        return value.ToNumber(true);
+    }
+
     private static ExpressionValue Trim(ExpressionValue value)
     {
         if (value.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null)
@@ -460,8 +471,27 @@ internal sealed class ExpressionParser(string expression)
             return value;
         }
 
-        return ExpressionValue.From(ToFalsyString(value).Trim());
+        string text = ToFalsyString(value);
+        int start = 0;
+        int end = text.Length;
+        while (start < end && IsEcmaScriptWhitespace(text[start]))
+        {
+            start++;
+        }
+
+        while (end > start && IsEcmaScriptWhitespace(text[end - 1]))
+        {
+            end--;
+        }
+
+        return ExpressionValue.From(text.Substring(start, end - start));
     }
+
+    private static bool IsEcmaScriptWhitespace(char value)
+        => value is (>= '\u0009' and <= '\u000D')
+            or '\u0020' or '\u00A0' or '\u1680'
+            or (>= '\u2000' and <= '\u200A')
+            or '\u2028' or '\u2029' or '\u202F' or '\u205F' or '\u3000' or '\uFEFF';
 
     private static bool Contains(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).IndexOf(right.ToJavaScriptString(), StringComparison.Ordinal) >= 0;
     private static bool StartsWith(ExpressionValue left, ExpressionValue right) => left.Kind == ExpressionValueKind.String && ((string)left.Value!).StartsWith(right.ToJavaScriptString(), StringComparison.Ordinal);

@@ -12,6 +12,12 @@ namespace Simple.Expressions.Tests;
 /// </summary>
 public class ModelAccessTests
 {
+    private sealed class MatchEvaluationModel(List<string> reads, string pattern)
+    {
+        public string Input { get { reads.Add("input"); return "value"; } }
+        public string Pattern { get { reads.Add("pattern"); return pattern; } }
+    }
+
     public ModelAccessTests()
     {
         SE.EnableCaches();
@@ -283,6 +289,14 @@ public class ModelAccessTests
 
         Assert.Equal("Ada!", evaluator(new Person { Name = "Ada" }));
         Assert.Equal("Grace!", evaluator(new Person { Name = "Grace" }));
+    }
+
+    [Fact]
+    public void DynamicMatchEvaluatesInputBeforePattern()
+    {
+        var reads = new List<string>();
+        Assert.False(SE.ExecuteExpression(new MatchEvaluationModel(reads, string.Empty), "match(#Input, #Pattern)"));
+        Assert.Equal(["input", "pattern"], reads);
     }
 
     private static readonly int[] model = [1, 2, 3];

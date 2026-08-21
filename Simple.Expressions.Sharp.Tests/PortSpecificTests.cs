@@ -39,4 +39,26 @@ public sealed class PortSpecificTests
         Assert.Equal("a\\\"b", SE.ParseExpression("\"a\\\"b\"")(new { }));
         Assert.True(SE.ExecuteExpression(new { }, "eq(\"a\\\"b\", \"a\\\"b\")"));
     }
+
+    [Fact]
+    public void NumRejectsListsAndNaNStrings()
+    {
+        Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("num([1])")(new { }));
+        Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("num(\"NaN\")")(new { }));
+    }
+
+    [Fact]
+    public void TrimUsesEcmaScriptWhitespace()
+    {
+        Assert.Equal("value", SE.ParseExpression("trim(#value)")(new { value = "\uFEFFvalue\u3000" }));
+        Assert.Equal("\u0085value\u0085", SE.ParseExpression("trim(#value)")(new { value = "\u0085value\u0085" }));
+    }
+
+    [Fact]
+    public void RawValuesPreserveNegativeZero()
+    {
+        double value = Assert.IsType<double>(SE.ParseExpression("#value")(new { value = -0d }));
+        Assert.True(BitConverter.DoubleToInt64Bits(value) < 0);
+        Assert.Equal(string.Empty, SE.ParseExpression("concat(#value, \"\")")(new { value = -0d }));
+    }
 }

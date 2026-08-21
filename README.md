@@ -49,7 +49,7 @@ Constants support case-insensitive Booleans, signed, decimal, and exponent numer
 
 Operators are case-insensitive. `and` and `or` are variadic and short-circuit. `if` is lazy and evaluates only its selected branch. `in` requires a list; `contains`, `startswith`, and `endswith` require a string left operand. `len` returns `0` for nullish values, a string/array length, or an exact `length` property, and throws otherwise.
 
-`not`, `empty`, `defined`, `lower`, `upper`, `trim`, `int`, `num`, `abs`, `floor`, `ceil`, and `sqrt` take one argument. `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, and `pow` take two. `clamp` and `if` take three. `concat`, `add`, `sub`, `mul`, `div`, `mod`, `min`, and `max` take two or more; `add`, `mul`, `min`, and `max` also accept one list and expand lists one level.
+`not`, `empty`, `defined`, `lower`, `upper`, `trim`, `int`, `num`, `abs`, `floor`, `ceil`, and `sqrt` take one argument. `num` accepts scalar values only and rejects lists. `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, and `pow` take two. `clamp` and `if` take three. `concat`, `add`, `sub`, `mul`, `div`, `mod`, `min`, and `max` take two or more; `add`, `mul`, `min`, and `max` also accept one list and expand lists one level.
 
 `in` requires a list and uses the same loose equality as `eq`. `trim` preserves null and missing values; other falsey values become empty strings before trimming. `defined` is false only for null and missing values. Lists may contain nested lists, model references, and operator expressions.
 
@@ -64,6 +64,8 @@ This port follows the [TypeScript reference](https://github.com/LieselThuriot/si
 | Behaviour | TypeScript | This port |
 | --- | --- | --- |
 | Regex engine | JavaScript regular expressions | .NET regular expressions |
+| Unicode casing | JavaScript Unicode casing | .NET invariant casing |
+| Numeric strings | JavaScript `Number` grammar | Invariant .NET floating-point grammar; prefixes such as `0x`, `0b`, and `0o` are not supported |
 
 Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
 
@@ -78,6 +80,8 @@ Models can be POCOs, anonymous types, `Dictionary<string, object?>` values, read
 Keep these details in mind:
 
 - **Property names are CLR names**, matched ordinally and case-sensitively. This port reads them directly and does not apply `[JsonPropertyName]`, `[JsonIgnore]`, or naming policies. It has no JSON dependency.
+- **Dictionary keys follow the dictionary's comparer.** Use `StringComparer.Ordinal` for TypeScript-like exact matching.
+- **References do not traverse list indexes.** Numeric path segments are member names, not indexes, so expressions such as `#items.0` and `#items.length` are not portable to this implementation. Lists remain supported by `len`, `in`, structural equality, and numeric list expansion.
 - **Models are read live**, at evaluation time. Mutating a model between evaluations is visible to the next one.
 - **Values use the port's established coercions**: numeric primitives become `double`, enums become their numeric value, `char` becomes a string, `DateTime`/`DateTimeOffset` become round-trip (`"O"`) strings, `Guid` becomes its `"D"` form, `Uri` becomes its original string, and `byte[]` becomes base64.
 

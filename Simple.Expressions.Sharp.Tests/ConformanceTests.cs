@@ -9,6 +9,7 @@ namespace Simple.Expressions.Tests;
 
 public sealed class ConformanceTests
 {
+    private static readonly string[] s_expectationNames = ["value", "truthy", "error"];
     private static readonly IReadOnlyDictionary<string, StjObject> Cases = LoadCases();
 
     [Theory]
@@ -110,12 +111,33 @@ public sealed class ConformanceTests
         }
     }
 
+    [Fact]
+    public void CasesRequireExactlyOneExpectation()
+    {
+        ValidateCase(new StjObject { ["id"] = "value-null", ["value"] = null });
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "none" }));
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "multiple", ["value"] = 1, ["truthy"] = true }));
+    }
+
     private static IReadOnlyDictionary<string, StjObject> LoadCases()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "conformance", "spec", "v1", "cases.json");
         var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
-        return document["cases"]!.AsArray()
-            .Select(node => node!.AsObject())
-            .ToDictionary(item => (string)item["id"]!, StringComparer.Ordinal);
+        var cases = document["cases"]!.AsArray().Select(node => node!.AsObject()).ToArray();
+        foreach (var item in cases)
+        {
+            ValidateCase(item);
+        }
+
+        return cases.ToDictionary(item => (string)item["id"]!, StringComparer.Ordinal);
+    }
+
+    private static void ValidateCase(StjObject item)
+    {
+        int expectations = s_expectationNames.Count(item.ContainsKey);
+        if (expectations != 1)
+        {
+            throw new InvalidDataException("Each case must have one expectation: " + (string?)item["id"]);
+        }
     }
 }

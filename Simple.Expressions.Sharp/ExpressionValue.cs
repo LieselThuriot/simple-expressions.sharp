@@ -37,12 +37,20 @@ internal readonly struct ExpressionValue
     public static ExpressionValue Null => new(ExpressionValueKind.Null);
     public static ExpressionValue From(bool value) => new(ExpressionValueKind.Boolean, value ? s_boxedTrue : s_boxedFalse);
 
-    public static ExpressionValue From(double value) => new(ExpressionValueKind.Number, value switch
+    public static ExpressionValue From(double value)
     {
-        0 => s_boxedZero,
-        1 => s_boxedOne,
-        _ => value,
-    });
+        object boxed = value;
+        if (value == 0 && BitConverter.DoubleToInt64Bits(value) >= 0)
+        {
+            boxed = s_boxedZero;
+        }
+        else if (value == 1)
+        {
+            boxed = s_boxedOne;
+        }
+
+        return new ExpressionValue(ExpressionValueKind.Number, boxed);
+    }
     public static ExpressionValue From(string value) => new(ExpressionValueKind.String, value);
     public static ExpressionValue FromArray(object value) => new(ExpressionValueKind.Array, value);
     public static ExpressionValue FromArray(IReadOnlyList<ExpressionValue> value) => new(ExpressionValueKind.Array, value);
@@ -82,6 +90,11 @@ internal readonly struct ExpressionValue
 
             if (double.TryParse((string)value!, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
             {
+                if (strict && double.IsNaN(number))
+                {
+                    throw new InvalidOperationException("Invalid numeric value");
+                }
+
                 return number;
             }
 
