@@ -6,12 +6,12 @@ public sealed class SimpleExpression
 {
     private readonly Evaluator _evaluator;
 
-    internal SimpleExpression(bool expression)
+    public SimpleExpression(bool expression)
     {
         _evaluator = _ => ExpressionValue.From(expression);
     }
 
-    internal SimpleExpression(string expression)
+    public SimpleExpression(string expression)
     {
         // Upstream's SimpleExpression constructor reports "whitespace";
         // "formatting" is reserved for parseExpression.

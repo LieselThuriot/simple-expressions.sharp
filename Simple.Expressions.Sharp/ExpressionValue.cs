@@ -57,27 +57,37 @@ internal readonly struct ExpressionValue
         _ => true,
     };
 
-    public double ToNumber()
+    public double ToNumber(bool strict = false)
     {
         return Kind switch
         {
             ExpressionValueKind.Null => 0,
             ExpressionValueKind.Boolean => (bool)Value! ? 1 : 0,
             ExpressionValueKind.Number => (double)Value!,
-            ExpressionValueKind.String => StringToNumber(Value),
+            ExpressionValueKind.String => StringToNumber(Value, strict),
             _ => double.NaN,
         };
 
-        static double StringToNumber(object? value)
+        static double StringToNumber(object? value, bool strict)
         {
             if (string.IsNullOrWhiteSpace((string)value!))
             {
+                if (strict)
+                {
+                    throw new InvalidOperationException("Invalid numeric value");
+                }
+
                 return 0;
             }
 
             if (double.TryParse((string)value!, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
             {
                 return number;
+            }
+
+            if (strict)
+            {
+                throw new InvalidOperationException("Invalid numeric value");
             }
 
             return double.NaN;

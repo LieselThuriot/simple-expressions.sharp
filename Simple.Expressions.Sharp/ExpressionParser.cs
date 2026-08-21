@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
+using System.Runtime.CompilerServices;
 
 namespace Simple.Expressions;
 
@@ -200,12 +201,12 @@ internal sealed class ExpressionParser(string expression)
             "upper" => model => ExpressionValue.From(ToFalsyString(arguments[0](model)).ToUpperInvariant()),
             "trim" => model => Trim(arguments[0](model)),
             "defined" => model => ExpressionValue.From(arguments[0](model).Kind is not (ExpressionValueKind.Missing or ExpressionValueKind.Null)),
-            "int" => model => ExpressionValue.From(Math.Truncate(arguments[0](model).ToNumber())),
-            "num" => model => ExpressionValue.From(arguments[0](model).ToNumber()),
-            "abs" => model => ExpressionValue.From(Math.Abs(arguments[0](model).ToNumber())),
-            "floor" => model => ExpressionValue.From(Math.Floor(arguments[0](model).ToNumber())),
-            "ceil" => model => ExpressionValue.From(Math.Ceiling(arguments[0](model).ToNumber())),
-            "sqrt" => model => ExpressionValue.From(Math.Sqrt(arguments[0](model).ToNumber())),
+            "int" => model => ExpressionValue.From(Math.Truncate(arguments[0](model).ToNumber(true))),
+            "num" => model => ExpressionValue.From(arguments[0](model).ToNumber(true)),
+            "abs" => model => ExpressionValue.From(Math.Abs(arguments[0](model).ToNumber(true))),
+            "floor" => model => ExpressionValue.From(Math.Floor(arguments[0](model).ToNumber(true))),
+            "ceil" => model => ExpressionValue.From(Math.Ceiling(arguments[0](model).ToNumber(true))),
+            "sqrt" => model => ExpressionValue.From(Math.Sqrt(arguments[0](model).ToNumber(true))),
             "eq" => model => ExpressionValue.From(LooseEquals(arguments[0](model), arguments[1](model))),
             "contains" => model => ExpressionValue.From(Contains(arguments[0](model), arguments[1](model))),
             "startswith" => model => ExpressionValue.From(StartsWith(arguments[0](model), arguments[1](model))),
@@ -219,8 +220,8 @@ internal sealed class ExpressionParser(string expression)
             "concat" => CompileConcat(arguments),
             "if" => model => arguments[0](model).IsTruthy() ? arguments[1](model) : arguments[2](model),
             "round" => model => Round(arguments[0](model), arguments[1](model)),
-            "pow" => model => ExpressionValue.From(Math.Pow(arguments[0](model).ToNumber(), arguments[1](model).ToNumber())),
-            "clamp" => model => ExpressionValue.From(Math.Min(Math.Max(arguments[0](model).ToNumber(), arguments[1](model).ToNumber()), arguments[2](model).ToNumber())),
+            "pow" => model => ExpressionValue.From(Math.Pow(arguments[0](model).ToNumber(true), arguments[1](model).ToNumber(true))),
+            "clamp" => model => ExpressionValue.From(Math.Min(Math.Max(arguments[0](model).ToNumber(true), arguments[1](model).ToNumber(true)), arguments[2](model).ToNumber(true))),
             "add" => CompileNumericVariadic(arguments, NumericOperation.Add, "add"),
             "sub" => CompileNumericVariadic(arguments, NumericOperation.Subtract, "sub"),
             "mul" => CompileNumericVariadic(arguments, NumericOperation.Multiply, "mul"),
@@ -255,7 +256,7 @@ internal sealed class ExpressionParser(string expression)
 
                     foreach (var item in items)
                     {
-                        values.Add(item.ToNumber());
+                        values.Add(item.ToNumber(true));
                     }
                 }
                 else if (operation is NumericOperation.Add or NumericOperation.Multiply or NumericOperation.Minimum or NumericOperation.Maximum
@@ -263,12 +264,12 @@ internal sealed class ExpressionParser(string expression)
                 {
                     foreach (var item in expanded)
                     {
-                        values.Add(item.ToNumber());
+                        values.Add(item.ToNumber(true));
                     }
                 }
                 else
                 {
-                    values.Add(value.ToNumber());
+                    values.Add(value.ToNumber(true));
                 }
             }
 
@@ -339,7 +340,7 @@ internal sealed class ExpressionParser(string expression)
 
     private static ExpressionValue Round(ExpressionValue value, ExpressionValue decimals)
     {
-        double places = decimals.ToNumber();
+        double places = decimals.ToNumber(true);
         if (double.IsNaN(places) || double.IsInfinity(places) || places != Math.Truncate(places) || places < 0 || places > 9007199254740991d)
         {
             throw new InvalidOperationException("Round precision must be a non-negative safe integer");
@@ -351,7 +352,7 @@ internal sealed class ExpressionParser(string expression)
             throw new InvalidOperationException("Round precision is too large");
         }
 
-        return ExpressionValue.From(Math.Floor((value.ToNumber() * factor) + 0.5) / factor);
+        return ExpressionValue.From(Math.Floor((value.ToNumber(true) * factor) + 0.5) / factor);
     }
 
     private static Evaluator CompileMatch(Evaluator input, Evaluator pattern)
@@ -487,11 +488,25 @@ internal sealed class ExpressionParser(string expression)
         throw new InvalidOperationException("Input does not have a length");
     }
 
-    private const int MaxStructuralDepth = 64;
+    private sealed class EqualityContext
+    {
+        public HashSet<(object Left, object Right)> Pairs { get; } = new(ReferencePairComparer.Instance);
+    }
 
-    private static bool LooseEquals(ExpressionValue left, ExpressionValue right) => LooseEquals(left, right, 0);
+    private sealed class ReferencePairComparer : IEqualityComparer<(object Left, object Right)>
+    {
+        public static ReferencePairComparer Instance { get; } = new();
 
-    private static bool LooseEquals(ExpressionValue left, ExpressionValue right, int depth)
+        public bool Equals((object Left, object Right) x, (object Left, object Right) y)
+            => ReferenceEquals(x.Left, y.Left) && ReferenceEquals(x.Right, y.Right);
+
+        public int GetHashCode((object Left, object Right) value)
+            => (RuntimeHelpers.GetHashCode(value.Left) * 397) ^ RuntimeHelpers.GetHashCode(value.Right);
+    }
+
+    private static bool LooseEquals(ExpressionValue left, ExpressionValue right) => LooseEquals(left, right, new EqualityContext());
+
+    private static bool LooseEquals(ExpressionValue left, ExpressionValue right, EqualityContext context)
     {
         if (left.Kind == right.Kind)
         {
@@ -501,8 +516,8 @@ internal sealed class ExpressionParser(string expression)
                 ExpressionValueKind.Boolean => (bool)left.Value! == (bool)right.Value!,
                 ExpressionValueKind.Number => (double)left.Value! == (double)right.Value!,
                 ExpressionValueKind.String => (string)left.Value! == (string)right.Value!,
-                ExpressionValueKind.Array => StructuralArrayEquals(left, right, depth),
-                _ => StructuralObjectEquals(left, right, depth),
+                ExpressionValueKind.Array => StructuralArrayEquals(left, right, context),
+                _ => StructuralObjectEquals(left, right, context),
             };
         }
 
@@ -518,12 +533,12 @@ internal sealed class ExpressionParser(string expression)
 
         if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
         {
-            return LooseEquals(ExpressionValue.From(left.ToJavaScriptString()), right);
+            return LooseEquals(ExpressionValue.From(left.ToJavaScriptString()), right, context);
         }
 
         if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
         {
-            return LooseEquals(left, ExpressionValue.From(right.ToJavaScriptString()));
+            return LooseEquals(left, ExpressionValue.From(right.ToJavaScriptString()), context);
         }
 
         if (left.Kind == ExpressionValueKind.Boolean || right.Kind == ExpressionValueKind.Boolean || (left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String) || (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number))
@@ -534,16 +549,16 @@ internal sealed class ExpressionParser(string expression)
         return false;
     }
 
-    private static bool StructuralArrayEquals(ExpressionValue left, ExpressionValue right, int depth)
+    private static bool StructuralArrayEquals(ExpressionValue left, ExpressionValue right, EqualityContext context)
     {
         if (ReferenceEquals(left.Value, right.Value))
         {
             return true;
         }
 
-        if (depth >= MaxStructuralDepth)
+        if (!context.Pairs.Add((left.Value!, right.Value!)))
         {
-            return false;
+            return true;
         }
 
         if (!ExpressionModel.TryGetArrayValues(left, out var leftValues) || !ExpressionModel.TryGetArrayValues(right, out var rightValues))
@@ -555,7 +570,7 @@ internal sealed class ExpressionParser(string expression)
         using var rightEnumerator = rightValues.GetEnumerator();
         while (leftEnumerator.MoveNext())
         {
-            if (!rightEnumerator.MoveNext() || !LooseEquals(leftEnumerator.Current, rightEnumerator.Current, depth + 1))
+            if (!rightEnumerator.MoveNext() || !LooseEquals(leftEnumerator.Current, rightEnumerator.Current, context))
             {
                 return false;
             }
@@ -564,16 +579,16 @@ internal sealed class ExpressionParser(string expression)
         return !rightEnumerator.MoveNext();
     }
 
-    private static bool StructuralObjectEquals(ExpressionValue left, ExpressionValue right, int depth)
+    private static bool StructuralObjectEquals(ExpressionValue left, ExpressionValue right, EqualityContext context)
     {
         if (ReferenceEquals(left.Value, right.Value))
         {
             return true;
         }
 
-        if (depth >= MaxStructuralDepth)
+        if (!context.Pairs.Add((left.Value!, right.Value!)))
         {
-            return false;
+            return true;
         }
 
         if (!ExpressionModel.TryGetObjectEntries(left, out var leftEntries) || !ExpressionModel.TryGetObjectEntries(right, out var rightEntries))
@@ -590,7 +605,7 @@ internal sealed class ExpressionParser(string expression)
         int count = 0;
         foreach (var entry in leftEntries)
         {
-            if (!rightByName.TryGetValue(entry.Key, out var other) || !LooseEquals(entry.Value, other, depth + 1))
+            if (!rightByName.TryGetValue(entry.Key, out var other) || !LooseEquals(entry.Value, other, context))
             {
                 return false;
             }

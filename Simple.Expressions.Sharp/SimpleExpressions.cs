@@ -133,7 +133,7 @@ public static class SimpleExpressions
         expression = expression.Trim();
         if (expression.Length == 0)
         {
-            throw new ExpressionParseException("formatting", 0);
+            throw ExpressionParseException.WithoutPosition("formatting");
         }
 
         lock (s_cacheLock)
