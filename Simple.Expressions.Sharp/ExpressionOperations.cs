@@ -153,34 +153,26 @@ internal static class ExpressionOperations
     public static ExpressionValue EvaluateNumeric(List<Evaluator> arguments, ExpressionModel model, NumericOperation operation, string name)
     {
         var values = new List<double>();
+        var activeEnumerables = new HashSet<object>(ReferenceEqualityComparer.Instance);
         foreach (var argument in arguments)
         {
             var value = argument(model);
-            if (operation is NumericOperation.Add or NumericOperation.Multiply or NumericOperation.Minimum or NumericOperation.Maximum
-                && arguments.Count == 1)
+            if (arguments.Count == 1 && value.Kind != ExpressionValueKind.Array)
             {
-                if (value.Kind != ExpressionValueKind.Array || !ClrValueAdapter.TryGetArrayValues(value, out var items))
-                {
-                    throw new InvalidOperationException("operator " + name + " expects at least two arguments");
-                }
+                throw new InvalidOperationException("operator " + name + " expects at least two arguments");
+            }
 
-                foreach (var item in items)
-                {
-                    values.Add(item.ToNumber(true));
-                }
-            }
-            else if (operation is NumericOperation.Add or NumericOperation.Multiply or NumericOperation.Minimum or NumericOperation.Maximum
-                && value.Kind == ExpressionValueKind.Array && ClrValueAdapter.TryGetArrayValues(value, out var expanded))
+            AddNumericValues(value);
+        }
+
+        if (operation is NumericOperation.Subtract or NumericOperation.Divide or NumericOperation.Modulo && values.Count < 2)
+        {
+            throw new InvalidOperationException(operation switch
             {
-                foreach (var item in expanded)
-                {
-                    values.Add(item.ToNumber(true));
-                }
-            }
-            else
-            {
-                values.Add(value.ToNumber(true));
-            }
+                NumericOperation.Subtract => "Sub requires at least two values",
+                NumericOperation.Divide => "Div requires at least two values",
+                _ => "Mod requires at least two values",
+            });
         }
 
         if (operation is NumericOperation.Minimum or NumericOperation.Maximum && values.Count == 0)
@@ -245,6 +237,38 @@ internal static class ExpressionOperations
         }
 
         return ExpressionValue.From(result);
+
+        void AddNumericValues(ExpressionValue value)
+        {
+            if (value.Kind != ExpressionValueKind.Array)
+            {
+                values.Add(value.ToNumber(true));
+                return;
+            }
+
+            object enumerable = value.Value!;
+            if (!activeEnumerables.Add(enumerable))
+            {
+                throw new InvalidOperationException("Invalid numeric value");
+            }
+
+            try
+            {
+                if (!ClrValueAdapter.TryGetArrayValues(value, out var items))
+                {
+                    throw new InvalidOperationException("Invalid numeric value");
+                }
+
+                foreach (var item in items)
+                {
+                    AddNumericValues(item);
+                }
+            }
+            finally
+            {
+                activeEnumerables.Remove(enumerable);
+            }
+        }
     }
 
     public static bool LooseEquals(ExpressionValue left, ExpressionValue right)
@@ -402,5 +426,14 @@ internal static class ExpressionOperations
 
         public int GetHashCode((object Left, object Right) value)
             => (RuntimeHelpers.GetHashCode(value.Left) * 397) ^ RuntimeHelpers.GetHashCode(value.Right);
+    }
+
+    private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+    {
+        public static ReferenceEqualityComparer Instance { get; } = new();
+
+        public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
     }
 }

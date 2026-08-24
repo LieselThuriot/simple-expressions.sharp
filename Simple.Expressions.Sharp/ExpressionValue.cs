@@ -67,7 +67,7 @@ internal readonly struct ExpressionValue
 
     public double ToNumber(bool strict = false)
     {
-        return Kind switch
+        double number = Kind switch
         {
             ExpressionValueKind.Null => 0,
             ExpressionValueKind.Boolean => (bool)Value! ? 1 : 0,
@@ -75,6 +75,13 @@ internal readonly struct ExpressionValue
             ExpressionValueKind.String => StringToNumber(Value, strict),
             _ => double.NaN,
         };
+
+        if (strict && (Kind is not (ExpressionValueKind.Number or ExpressionValueKind.String) || double.IsNaN(number) || double.IsInfinity(number)))
+        {
+            throw new InvalidOperationException("Invalid numeric value");
+        }
+
+        return number;
 
         static double StringToNumber(object? value, bool strict)
         {
@@ -90,11 +97,6 @@ internal readonly struct ExpressionValue
 
             if (double.TryParse((string)value!, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
             {
-                if (strict && double.IsNaN(number))
-                {
-                    throw new InvalidOperationException("Invalid numeric value");
-                }
-
                 return number;
             }
 

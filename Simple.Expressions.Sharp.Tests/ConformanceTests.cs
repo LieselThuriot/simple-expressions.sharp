@@ -10,6 +10,14 @@ namespace Simple.Expressions.Tests;
 public sealed class ConformanceTests
 {
     private static readonly string[] s_expectationNames = ["value", "truthy", "error"];
+    private static readonly HashSet<string> s_allowedDocumentProperties = new(StringComparer.Ordinal)
+    {
+        "$comment", "cases",
+    };
+    private static readonly HashSet<string> s_allowedCaseProperties = new(StringComparer.Ordinal)
+    {
+        "$comment", "id", "expression", "model", "value", "truthy", "error",
+    };
     private static readonly IReadOnlyDictionary<string, StjObject> Cases = LoadCases();
 
     [Theory]
@@ -18,15 +26,17 @@ public sealed class ConformanceTests
     {
         var item = Cases[id];
         string expression = (string)item["expression"]!;
-        object? model = ParseModel(item["model"]);
+        object? model = ParseModel(item);
 
-        if (item["error"] is JsonNode error)
+        if (item.ContainsKey("error"))
         {
+            var error = item["error"]!;
             var exception = Assert.ThrowsAny<Exception>(() => SE.ParseExpression(expression)(model));
             Assert.Contains((string)error!, exception.Message);
         }
-        else if (item["truthy"] is JsonNode truthy)
+        else if (item.ContainsKey("truthy"))
         {
+            var truthy = item["truthy"]!;
             Assert.Equal((bool)truthy!, SE.ExecuteExpression(model, expression));
         }
         else
@@ -49,7 +59,8 @@ public sealed class ConformanceTests
         }
     }
 
-    private static object? ParseModel(JsonNode? model) => model is null ? new Dictionary<string, object?>() : ToClrValue(model);
+    private static object? ParseModel(StjObject item)
+        => item.ContainsKey("model") ? ToClrValue(item["model"]) : new Dictionary<string, object?>();
 
     private static object? ToClrValue(JsonNode? node) => node switch
     {
@@ -114,30 +125,151 @@ public sealed class ConformanceTests
     [Fact]
     public void CasesRequireExactlyOneExpectation()
     {
-        ValidateCase(new StjObject { ["id"] = "value-null", ["value"] = null });
-        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "none" }));
-        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "multiple", ["value"] = 1, ["truthy"] = true }));
+        ValidateCase(new StjObject { ["id"] = "value-null", ["expression"] = "#value", ["value"] = null });
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "none", ["expression"] = "true" }));
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "multiple", ["expression"] = "true", ["value"] = 1, ["truthy"] = true }));
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "bad-truthy", ["expression"] = "true", ["truthy"] = "yes" }));
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "bad-error", ["expression"] = "true", ["error"] = null }));
+        Assert.Throws<InvalidDataException>(() => ValidateCase(new StjObject { ["id"] = "blank-error", ["expression"] = "true", ["error"] = " " }));
+    }
+
+    [Fact]
+    public void DocumentRequiresValidShape()
+    {
+        ValidateDocument(new StjObject { ["$comment"] = new JsonArray("comment"), ["cases"] = new JsonArray() });
+        Assert.Throws<InvalidDataException>(() => ValidateDocument(new JsonArray()));
+        Assert.Throws<InvalidDataException>(() => ValidateDocument(new StjObject()));
+        Assert.Throws<InvalidDataException>(() => ValidateDocument(new StjObject { ["cases"] = new StjObject() }));
+        Assert.Throws<InvalidDataException>(() => ValidateDocument(new StjObject { ["cases"] = new JsonArray(), ["extra"] = true }));
+        Assert.Throws<InvalidDataException>(() => ValidateDocument(new StjObject { ["$comment"] = "comment", ["cases"] = new JsonArray() }));
+        Assert.Throws<InvalidDataException>(() => ValidateDocument(new StjObject { ["$comment"] = new JsonArray("comment", 1), ["cases"] = new JsonArray() }));
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCaseShapes))]
+    public void CasesRequireValidShape(StjObject item)
+        => Assert.Throws<InvalidDataException>(() => ValidateCase(item));
+
+    public static TheoryData<StjObject> InvalidCaseShapes => new()
+    {
+        new StjObject { ["id"] = null, ["expression"] = "true", ["truthy"] = true },
+        new StjObject { ["id"] = "", ["expression"] = "true", ["truthy"] = true },
+        new StjObject { ["id"] = "case", ["expression"] = null, ["truthy"] = true },
+        new StjObject { ["id"] = "case", ["expression"] = 1, ["truthy"] = true },
+        new StjObject { ["id"] = "case", ["expression"] = "true", ["truthy"] = true, ["extra"] = 1 },
+    };
+
+    [Fact]
+    public void CaseIdsMustBeUnique()
+    {
+        var item = new StjObject { ["id"] = "duplicate", ["expression"] = "true", ["truthy"] = true };
+        Assert.Throws<InvalidDataException>(() => ValidateCases([item, (StjObject)item.DeepClone()]));
+    }
+
+    [Fact]
+    public void AdapterDistinguishesMissingAndExplicitNullModels()
+    {
+        Assert.IsType<Dictionary<string, object?>>(ParseModel(new StjObject()));
+        Assert.Null(ParseModel(new StjObject { ["model"] = null }));
     }
 
     private static IReadOnlyDictionary<string, StjObject> LoadCases()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "conformance", "spec", "v1", "cases.json");
-        var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
-        var cases = document["cases"]!.AsArray().Select(node => node!.AsObject()).ToArray();
+        JsonNode? root = JsonNode.Parse(File.ReadAllText(path));
+        StjObject document = ValidateDocument(root);
+        var caseNodes = (JsonArray)document["cases"]!;
+
+        var cases = new List<StjObject>(caseNodes.Count);
+        foreach (var node in caseNodes)
+        {
+            if (node is not StjObject item)
+            {
+                throw new InvalidDataException("Each conformance case must be an object.");
+            }
+
+            cases.Add(item);
+        }
+
+        ValidateCases(cases);
+        return cases.ToDictionary(item => (string)item["id"]!, StringComparer.Ordinal);
+    }
+
+    private static StjObject ValidateDocument(JsonNode? root)
+    {
+        if (root is not StjObject document || document["cases"] is not JsonArray)
+        {
+            throw new InvalidDataException("Conformance corpus must be an object containing a cases array.");
+        }
+
+        if (document.Any(property => !s_allowedDocumentProperties.Contains(property.Key)))
+        {
+            throw new InvalidDataException("Unknown property in conformance corpus.");
+        }
+
+        if (document.ContainsKey("$comment") &&
+            (document["$comment"] is not JsonArray comments ||
+             comments.Any(comment => comment?.GetValueKind() != JsonValueKind.String)))
+        {
+            throw new InvalidDataException("Corpus comment must be an array of strings.");
+        }
+
+        return document;
+    }
+
+    private static void ValidateCases(IEnumerable<StjObject> cases)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in cases)
         {
             ValidateCase(item);
+            string id = item["id"]!.GetValue<string>();
+            if (!ids.Add(id))
+            {
+                throw new InvalidDataException("Duplicate conformance case id: " + id);
+            }
         }
-
-        return cases.ToDictionary(item => (string)item["id"]!, StringComparer.Ordinal);
     }
 
     private static void ValidateCase(StjObject item)
     {
+        if (item.Any(property => !s_allowedCaseProperties.Contains(property.Key)))
+        {
+            throw new InvalidDataException("Unknown property in conformance case: " + (string?)item["id"]);
+        }
+
+        if (item["id"]?.GetValueKind() != JsonValueKind.String || string.IsNullOrWhiteSpace(item["id"]!.GetValue<string>()))
+        {
+            throw new InvalidDataException("Case id must be a non-empty string.");
+        }
+
+        string id = item["id"]!.GetValue<string>();
+        if (item["expression"]?.GetValueKind() != JsonValueKind.String)
+        {
+            throw new InvalidDataException("Case expression must be a string: " + id);
+        }
+
+        if (item.ContainsKey("$comment") && item["$comment"]?.GetValueKind() != JsonValueKind.String)
+        {
+            throw new InvalidDataException("Case comment must be a string: " + id);
+        }
+
         int expectations = s_expectationNames.Count(item.ContainsKey);
         if (expectations != 1)
         {
-            throw new InvalidDataException("Each case must have one expectation: " + (string?)item["id"]);
+            throw new InvalidDataException("Each case must have one expectation: " + id);
+        }
+
+        if (item.ContainsKey("truthy") && item["truthy"]?.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            throw new InvalidDataException("Truthy expectation must be boolean: " + id);
+        }
+
+        if (item.ContainsKey("error") &&
+            (item["error"]?.GetValueKind() != JsonValueKind.String ||
+             string.IsNullOrWhiteSpace(item["error"]!.GetValue<string>())))
+        {
+            throw new InvalidDataException("Error expectation must be a non-empty string: " + id);
         }
     }
 }

@@ -1,7 +1,6 @@
 #nullable enable
 
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -20,14 +19,15 @@ namespace Simple.Expressions;
 /// </remarks>
 internal static class ModelAccessor
 {
-    private static readonly ConcurrentDictionary<Type, MemberAccessor> s_accessors = new();
-    private static readonly Func<Type, MemberAccessor> s_accessorFactory = Build;
+    private static readonly RuntimeCache<Type, MemberAccessor> s_accessors = RuntimeCaches.Create<Type, MemberAccessor>();
+
+    internal static IRuntimeCache Cache => s_accessors;
 
     public static bool TryGetMember(object instance, string name, out object? value)
-        => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).TryGet(instance, name, out value);
+        => Get(instance.GetType()).TryGet(instance, name, out value);
 
     public static IEnumerable<KeyValuePair<string, object?>> GetEntries(object instance)
-        => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).GetEntries(instance);
+        => Get(instance.GetType()).GetEntries(instance);
 
     /// <summary>
     /// Whether a value is keyed rather than sequential. Dictionaries are objects even though
@@ -35,7 +35,9 @@ internal static class ModelAccessor
     /// <see cref="ClrValueAdapter"/>.
     /// </summary>
     public static bool IsDictionary(object instance)
-        => s_accessors.GetOrAdd(instance.GetType(), s_accessorFactory).IsDictionary;
+        => Get(instance.GetType()).IsDictionary;
+
+    private static MemberAccessor Get(Type type) => s_accessors.GetOrCreate(type, Build);
 
     private static MemberAccessor Build(Type type)
     {

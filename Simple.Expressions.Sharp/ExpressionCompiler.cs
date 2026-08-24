@@ -26,8 +26,8 @@ internal static class ExpressionCompiler
             "not" or "empty" or "len" or "lower" or "upper" or "trim" or "defined" or "int" or "num" or "abs" or "floor" or "ceil" or "sqrt" => new OperatorSpec(1),
             "eq" or "contains" or "startswith" or "endswith" or "gt" or "lt" or "match" or "in" or "round" or "pow" => new OperatorSpec(2),
             "clamp" or "if" => new OperatorSpec(3),
-            "and" or "or" or "concat" or "sub" or "div" or "mod" => new OperatorSpec(VariadicArity),
-            "add" or "mul" or "min" or "max" => new OperatorSpec(VariadicArity, allowsSingleListArgument: true),
+            "and" or "or" or "concat" => new OperatorSpec(VariadicArity),
+            "add" or "sub" or "mul" or "div" or "mod" or "min" or "max" => new OperatorSpec(VariadicArity, allowsSingleListArgument: true),
             _ => default,
         };
 

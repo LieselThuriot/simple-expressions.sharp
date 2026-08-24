@@ -49,11 +49,11 @@ Constants support case-insensitive Booleans, signed, decimal, and exponent numer
 
 Operators are case-insensitive. `and` and `or` are variadic and short-circuit. `if` is lazy and evaluates only its selected branch. `in` requires a list; `contains`, `startswith`, and `endswith` require a string left operand. `len` returns `0` for nullish values, a string/array length, or an exact `length` property, and throws otherwise.
 
-`not`, `empty`, `defined`, `lower`, `upper`, `trim`, `int`, `num`, `abs`, `floor`, `ceil`, and `sqrt` take one argument. `num` accepts scalar values only and rejects lists. `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, and `pow` take two. `clamp` and `if` take three. `concat`, `add`, `sub`, `mul`, `div`, `mod`, `min`, and `max` take two or more; `add`, `mul`, `min`, and `max` also accept one list and expand lists one level.
+`not`, `empty`, `defined`, `lower`, `upper`, `trim`, `int`, `num`, `abs`, `floor`, `ceil`, and `sqrt` take one argument. `num` accepts scalar values only and rejects lists. `eq`, `contains`, `startswith`, `endswith`, `in`, `gt`, `lt`, `match`, `round`, and `pow` take two. `clamp` and `if` take three. `concat` takes two or more. Each of `add`, `sub`, `mul`, `div`, `mod`, `min`, and `max` accepts a single list expression and recursively flattens nested lists depth-first. `sub`, `div`, and `mod` require at least two flattened values; `min` and `max` require one.
 
 `in` requires a list and uses the same loose equality as `eq`. `trim` preserves null and missing values; other falsey values become empty strings before trimming. `defined` is false only for null and missing values. Lists may contain nested lists, model references, and operator expressions.
 
-Numeric operators strictly convert values to numbers and throw `Invalid numeric value` for empty, blank, or invalid strings. `add`, `mul`, `min`, and `max` accept a single list argument and expand list arguments one level; `add([])` is zero and `mul([])` is one. `div` and `mod` throw `Division by zero` for zero divisors. `min` and `max` throw for empty lists. `round` requires a non-negative safe integer precision.
+Numeric operators accept finite numeric values and finite numeric strings as scalar leaves. They throw `Invalid numeric value` for booleans, null or missing values, objects, scalar lists, blank or invalid strings, nonfinite inputs, and active enumerable cycles. Arithmetic results may be nonfinite. `add([])` is zero and `mul([])` is one. `div` and `mod` throw `Division by zero` for zero divisors. `round` requires a non-negative safe integer precision.
 
 The evaluator uses JavaScript-style truthiness, loose equality, and value conversion where those rules can be represented by .NET values. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable. Empty or non-string patterns return `false`.
 
@@ -91,7 +91,7 @@ Sequences are read lazily, so `in(...)` can stop at the first match. A single-pa
 
 ## Caching
 
-Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both caches have a FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Use `Clear()` or `Clear` with `parsed` and `expression` option keys, `SetCacheLimit` to change the limit, and `DisableCaches`/`EnableCaches` to control cache contents and state. Disabling caches also clears existing entries.
+Parsed evaluators, expressions returned by `SimpleExpressions.Get`, dynamic regular expressions, and reflection accessors are cached by default. All caches share the FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Concurrent misses for one key share a single factory result, while failed factories are retried. Use `Clear()` or `Clear` with `parsed` and `expression` option keys, `SetCacheLimit` to change the shared limit, and `DisableCaches`/`EnableCaches` to control cache contents and state. A full clear and disabling caches clear every runtime cache. Constant regex patterns are compiled eagerly into their parsed evaluator and therefore remain usable when runtime caches are cleared.
 
 ## Security
 
