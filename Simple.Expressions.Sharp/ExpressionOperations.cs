@@ -92,7 +92,9 @@ internal static class ExpressionOperations
             throw new InvalidOperationException("Round precision is too large");
         }
 
-        return ExpressionValue.From(Math.Floor((value.ToNumber(true) * factor) + 0.5) / factor);
+        double number = value.ToNumber(true);
+        double result = Math.Floor((number * factor) + 0.5) / factor;
+        return ExpressionValue.From(result == 0 && BitConverter.DoubleToInt64Bits(number) < 0 ? -0d : result);
     }
 
     public static ExpressionValue EvaluateAnd(List<Evaluator> arguments, ExpressionModel model)
@@ -159,7 +161,7 @@ internal static class ExpressionOperations
             var value = argument(model);
             if (arguments.Count == 1 && value.Kind != ExpressionValueKind.Array)
             {
-                throw new InvalidOperationException("operator " + name + " expects at least two arguments");
+                throw new InvalidOperationException("operator " + name + " expects at least two arguments or one list argument");
             }
 
             AddNumericValues(value);

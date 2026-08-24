@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -19,9 +20,7 @@ namespace Simple.Expressions;
 /// </remarks>
 internal static class ModelAccessor
 {
-    private static readonly RuntimeCache<Type, MemberAccessor> s_accessors = RuntimeCaches.Create<Type, MemberAccessor>();
-
-    internal static IRuntimeCache Cache => s_accessors;
+    private static readonly ConcurrentDictionary<Type, MemberAccessor> s_accessors = new();
 
     public static bool TryGetMember(object instance, string name, out object? value)
         => Get(instance.GetType()).TryGet(instance, name, out value);
@@ -37,7 +36,7 @@ internal static class ModelAccessor
     public static bool IsDictionary(object instance)
         => Get(instance.GetType()).IsDictionary;
 
-    private static MemberAccessor Get(Type type) => s_accessors.GetOrCreate(type, Build);
+    private static MemberAccessor Get(Type type) => s_accessors.GetOrAdd(type, Build);
 
     private static MemberAccessor Build(Type type)
     {

@@ -119,7 +119,7 @@ internal static class ExpressionCompiler
         {
             var runtimeInput = input(model);
             var runtimePattern = pattern(model);
-            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && RuntimeRegexCache.Get((string)runtimePattern.Value!).IsMatch(ExpressionOperations.ToFalsyString(runtimeInput)));
+            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && new Regex((string)runtimePattern.Value!, RegexOptions.CultureInvariant).IsMatch(ExpressionOperations.ToFalsyString(runtimeInput)));
         };
     }
 

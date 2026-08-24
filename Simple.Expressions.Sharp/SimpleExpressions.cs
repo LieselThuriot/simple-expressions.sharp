@@ -36,13 +36,13 @@ public static class SimpleExpressions
         bool clearExpressions = options is null || (options.TryGetValue("expression", out bool expression) && expression);
         if (options is null)
         {
-            RuntimeCaches.ClearAll();
+            RuntimeCaches.Clear(s_parseCache, s_simpleCache);
             return;
         }
 
         if (clearParsed)
         {
-            RuntimeCaches.Clear(s_parseCache, RuntimeRegexCache.Cache, ModelAccessor.Cache);
+            RuntimeCaches.Clear(s_parseCache);
         }
 
         if (clearExpressions)

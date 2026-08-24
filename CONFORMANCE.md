@@ -6,4 +6,4 @@ The pinned `conformance/` submodule supplies `spec/v1/cases.json`, which is exec
 
 The conformance suite is the minimum shared test set. The additional local tests cover CLR model access, caching, and port-specific semantics.
 
-This implementation supports conformance specification v1. Numeric operators recursively flatten lists and require finite numeric scalar inputs; their results may be nonfinite. Equality is structural for lists and objects and is cycle-safe.
+This implementation supports conformance specification v1. Numeric operators recursively flatten lists and require finite numeric scalar inputs, including JavaScript-compatible numeric strings; their results may be nonfinite. Equality is structural for lists and objects and is cycle-safe.

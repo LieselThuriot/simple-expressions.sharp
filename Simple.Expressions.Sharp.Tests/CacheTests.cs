@@ -172,7 +172,7 @@ public sealed class CacheTests
     }
 
     [Fact]
-    public void ClearResetsReflectionAndDynamicRegexCachesWithoutChangingConstantRegexes()
+    public void ClearDoesNotInvalidateExistingConstantOrDynamicRegexEvaluators()
     {
         var constant = SE.ParseExpression("match(#value, \"^a\")");
         var dynamic = SE.ParseExpression("match(#value, #pattern)");

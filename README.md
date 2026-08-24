@@ -65,7 +65,6 @@ This port follows the [TypeScript reference](https://github.com/LieselThuriot/si
 | --- | --- | --- |
 | Regex engine | JavaScript regular expressions | .NET regular expressions |
 | Unicode casing | JavaScript Unicode casing | .NET invariant casing |
-| Numeric strings | JavaScript `Number` grammar | Invariant .NET floating-point grammar; prefixes such as `0x`, `0b`, and `0o` are not supported |
 
 Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
 
@@ -91,7 +90,7 @@ Sequences are read lazily, so `in(...)` can stop at the first match. A single-pa
 
 ## Caching
 
-Parsed evaluators, expressions returned by `SimpleExpressions.Get`, dynamic regular expressions, and reflection accessors are cached by default. All caches share the FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Concurrent misses for one key share a single factory result, while failed factories are retried. Use `Clear()` or `Clear` with `parsed` and `expression` option keys, `SetCacheLimit` to change the shared limit, and `DisableCaches`/`EnableCaches` to control cache contents and state. A full clear and disabling caches clear every runtime cache. Constant regex patterns are compiled eagerly into their parsed evaluator and therefore remain usable when runtime caches are cleared.
+Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both use the configured FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Concurrent misses for one key share a single factory result, while failed factories are retried. Use `Clear()` or `Clear` with `parsed` and `expression` option keys, `SetCacheLimit` to change both limits, and `DisableCaches`/`EnableCaches` to control their contents and state. Reflection accessors use a separate internal cache. Constant regex patterns are compiled eagerly into their parsed evaluator; model-supplied patterns are compiled when evaluated.
 
 ## Security
 

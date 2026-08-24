@@ -46,13 +46,13 @@ public sealed class ArithmeticTests
     }
 
     [Theory]
-    [InlineData("add(1)", "operator add expects at least two arguments")]
-    [InlineData("sub(1)", "operator sub expects at least two arguments")]
-    [InlineData("mul(1)", "operator mul expects at least two arguments")]
-    [InlineData("div(1)", "operator div expects at least two arguments")]
-    [InlineData("mod(1)", "operator mod expects at least two arguments")]
-    [InlineData("min(1)", "operator min expects at least two arguments")]
-    [InlineData("max(1)", "operator max expects at least two arguments")]
+    [InlineData("add(1)", "operator add expects at least two arguments or one list argument")]
+    [InlineData("sub(1)", "operator sub expects at least two arguments or one list argument")]
+    [InlineData("mul(1)", "operator mul expects at least two arguments or one list argument")]
+    [InlineData("div(1)", "operator div expects at least two arguments or one list argument")]
+    [InlineData("mod(1)", "operator mod expects at least two arguments or one list argument")]
+    [InlineData("min(1)", "operator min expects at least two arguments or one list argument")]
+    [InlineData("max(1)", "operator max expects at least two arguments or one list argument")]
     public void SingleNumericArgumentMustEvaluateToAList(string expression, string message)
     {
         Assert.Equal(message, Assert.Throws<InvalidOperationException>(() => SE.ParseExpression(expression)(null)).Message);
@@ -69,6 +69,26 @@ public sealed class ArithmeticTests
         }
 
         Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("add([1, #missing])")(new { }));
+    }
+
+    [Theory]
+    [InlineData("0x10", 16d)]
+    [InlineData("0X10000000000000000", 18446744073709551616d)]
+    [InlineData("0b10", 2d)]
+    [InlineData("0o10", 8d)]
+    public void NumericStringsUseJavaScriptRadixGrammar(string value, double expected)
+    {
+        var model = new { value };
+        Assert.Equal(expected, SE.ParseExpression("num(#value)")(model));
+        Assert.Equal(expected + 1, SE.ParseExpression("add(#value, 1)")(model));
+        Assert.True(SE.ExecuteExpression(model, "eq(#value, " + expected.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"));
+    }
+
+    [Fact]
+    public void RoundPreservesJavaScriptNegativeZero()
+    {
+        double result = Assert.IsType<double>(SE.ParseExpression("round(-0.5, 0)")(null));
+        Assert.Equal(long.MinValue, BitConverter.DoubleToInt64Bits(result));
     }
 
     [Fact]

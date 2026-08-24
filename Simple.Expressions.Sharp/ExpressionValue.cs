@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Globalization;
+using System.Numerics;
 
 namespace Simple.Expressions;
 
@@ -85,7 +86,8 @@ internal readonly struct ExpressionValue
 
         static double StringToNumber(object? value, bool strict)
         {
-            if (string.IsNullOrWhiteSpace((string)value!))
+            string text = ((string)value!).Trim();
+            if (text.Length == 0)
             {
                 if (strict)
                 {
@@ -95,7 +97,7 @@ internal readonly struct ExpressionValue
                 return 0;
             }
 
-            if (double.TryParse((string)value!, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
+            if (TryParseJavaScriptNumber(text, out double number))
             {
                 return number;
             }
@@ -106,6 +108,61 @@ internal readonly struct ExpressionValue
             }
 
             return double.NaN;
+        }
+
+        static bool TryParseJavaScriptNumber(string text, out double number)
+        {
+            if (text.Length > 2 && text[0] == '0')
+            {
+                int radix = text[1] switch
+                {
+                    'x' or 'X' => 16,
+                    'b' or 'B' => 2,
+                    'o' or 'O' => 8,
+                    _ => 0,
+                };
+                if (radix != 0)
+                {
+                    try
+                    {
+                        string digits = text.Substring(2);
+                        BigInteger integer;
+                        if (radix == 16)
+                        {
+                            if (!BigInteger.TryParse("0" + digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out integer))
+                            {
+                                number = 0;
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            integer = BigInteger.Zero;
+                            foreach (char digit in digits)
+                            {
+                                int value = digit - '0';
+                                if (value < 0 || value >= radix)
+                                {
+                                    number = 0;
+                                    return false;
+                                }
+
+                                integer = (integer * radix) + value;
+                            }
+                        }
+
+                        number = (double)integer;
+                        return true;
+                    }
+                    catch (Exception exception) when (exception is FormatException or OverflowException or ArgumentException)
+                    {
+                        number = 0;
+                        return false;
+                    }
+                }
+            }
+
+            return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out number);
         }
     }
 
