@@ -208,7 +208,7 @@ public class ModelAccessTests
         Assert.True(SE.ExecuteExpression(new { value = new { length = 4 } }, "eq(len(#value), 4)"));
 
         // `Length` is a different member; upstream only ever reads `length`.
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ExpressionEvaluationException>(
             () => SE.ExecuteExpression(new { value = new { Length = 4 } }, "eq(len(#value), 4)"));
     }
 

@@ -7,6 +7,17 @@ public sealed class ArithmeticTests
 {
     private static readonly int[] s_values = [1, 2, 3];
 
+    private sealed class NumericEvaluationModel
+    {
+        public required object Invalid { get; init; }
+        public object Later => throw new InvalidOperationException(Invalid.ToString());
+    }
+
+    private sealed class ThrowingEnumerable : IEnumerable
+    {
+        public IEnumerator GetEnumerator() => throw new InvalidOperationException("later list flattened");
+    }
+
     [Theory]
     [InlineData("add([1, [2, 3]])", 6d)]
     [InlineData("sub([10, [2, 3]])", 5d)]
@@ -38,24 +49,24 @@ public sealed class ArithmeticTests
     {
         Assert.Equal(0d, SE.ParseExpression("add([])")(null));
         Assert.Equal(1d, SE.ParseExpression("mul([[], []])")(null));
-        Assert.Equal("Sub requires at least two values", Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("sub([1, []])")(null)).Message);
-        Assert.Equal("Div requires at least two values", Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("div([1])")(null)).Message);
-        Assert.Equal("Mod requires at least two values", Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("mod([[]])")(null)).Message);
-        Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("min([[]])")(null));
-        Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("max([])")(null));
+        Assert.Equal("Sub requires at least two values", Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("sub([1, []])")(null)).Message);
+        Assert.Equal("Div requires at least two values", Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("div([1])")(null)).Message);
+        Assert.Equal("Mod requires at least two values", Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("mod([[]])")(null)).Message);
+        Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("min([[]])")(null));
+        Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("max([])")(null));
     }
 
     [Theory]
-    [InlineData("add(1)", "operator add expects at least two arguments or one list argument")]
-    [InlineData("sub(1)", "operator sub expects at least two arguments or one list argument")]
-    [InlineData("mul(1)", "operator mul expects at least two arguments or one list argument")]
-    [InlineData("div(1)", "operator div expects at least two arguments or one list argument")]
-    [InlineData("mod(1)", "operator mod expects at least two arguments or one list argument")]
-    [InlineData("min(1)", "operator min expects at least two arguments or one list argument")]
-    [InlineData("max(1)", "operator max expects at least two arguments or one list argument")]
+    [InlineData("add(1)", "Invalid Expression: operator add expects at least two arguments or one list argument")]
+    [InlineData("sub(1)", "Invalid Expression: operator sub expects at least two arguments or one list argument")]
+    [InlineData("mul(1)", "Invalid Expression: operator mul expects at least two arguments or one list argument")]
+    [InlineData("div(1)", "Invalid Expression: operator div expects at least two arguments or one list argument")]
+    [InlineData("mod(1)", "Invalid Expression: operator mod expects at least two arguments or one list argument")]
+    [InlineData("min(1)", "Invalid Expression: operator min expects at least two arguments or one list argument")]
+    [InlineData("max(1)", "Invalid Expression: operator max expects at least two arguments or one list argument")]
     public void SingleNumericArgumentMustEvaluateToAList(string expression, string message)
     {
-        Assert.Equal(message, Assert.Throws<InvalidOperationException>(() => SE.ParseExpression(expression)(null)).Message);
+        Assert.Equal(message, Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression(expression)(null)).Message);
     }
 
     [Fact]
@@ -64,19 +75,19 @@ public sealed class ArithmeticTests
         object?[] invalid = [true, null, new object(), "", " ", "invalid", double.NaN, double.PositiveInfinity];
         foreach (object? value in invalid)
         {
-            var exception = Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("add([1, #value])")(new { value }));
+            var exception = Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("add([1, #value])")(new { value }));
             Assert.Equal("Invalid numeric value", exception.Message);
         }
 
-        Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("add([1, #missing])")(new { }));
+        Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("add([1, #missing])")(new { }));
     }
 
     [Theory]
-    [InlineData("0x10", 16d)]
-    [InlineData("0X10000000000000000", 18446744073709551616d)]
-    [InlineData("0b10", 2d)]
-    [InlineData("0o10", 8d)]
-    public void NumericStringsUseJavaScriptRadixGrammar(string value, double expected)
+    [InlineData(".5", 0.5d)]
+    [InlineData("5.", 5d)]
+    [InlineData("-2.5e+2", -250d)]
+    [InlineData("\u00851.5\u3000", 1.5d)]
+    public void NumericStringsUseThePortableDecimalGrammar(string value, double expected)
     {
         var model = new { value };
         Assert.Equal(expected, SE.ParseExpression("num(#value)")(model));
@@ -84,21 +95,89 @@ public sealed class ArithmeticTests
         Assert.True(SE.ExecuteExpression(model, "eq(#value, " + expected.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"));
     }
 
-    [Fact]
-    public void RoundPreservesJavaScriptNegativeZero()
+    [Theory]
+    [InlineData("0x10")]
+    [InlineData("0b10")]
+    [InlineData("0o10")]
+    [InlineData("1e309")]
+    [InlineData("\uFEFF1\uFEFF")]
+    public void NumericStringsRejectNonDecimalOrNonfiniteForms(string value)
     {
-        double result = Assert.IsType<double>(SE.ParseExpression("round(-0.5, 0)")(null));
-        Assert.Equal(long.MinValue, BitConverter.DoubleToInt64Bits(result));
+        Assert.Equal("Invalid numeric value", Assert.Throws<ExpressionEvaluationException>(
+            () => SE.ParseExpression("num(#value)")(new { value })).Message);
     }
 
     [Fact]
-    public void NumericOperatorOutputsMayBeNonfinite()
+    public void NumericLiteralsMustBeFinite()
     {
-        Assert.Equal(double.PositiveInfinity, SE.ParseExpression("mul([1e308, 1e308])")(null));
-        Assert.True(double.IsNaN(Assert.IsType<double>(SE.ParseExpression("sqrt(-1)")(null))));
+        Assert.Contains("Invalid numeric value", Assert.Throws<ExpressionParseException>(
+            () => SE.ParseExpression("1e309")).Message);
+    }
 
-        Assert.Equal("Invalid numeric value", Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("abs(mul(1e308, 1e308))")(null)).Message);
-        Assert.Equal("Invalid numeric value", Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("add([sqrt(-1)])")(null)).Message);
+    [Theory]
+    [InlineData("round(-0.4, 0)")]
+    [InlineData("mul(-1, 0)")]
+    [InlineData("ceil(-0.5)")]
+    public void NumericResultsNormalizeNegativeZero(string expression)
+    {
+        double result = Assert.IsType<double>(SE.ParseExpression(expression)(null));
+        Assert.Equal(0d, result);
+        Assert.Equal(0L, BitConverter.DoubleToInt64Bits(result));
+    }
+
+    [Fact]
+    public void NumericOperatorOutputsMustBeFinite()
+    {
+        string[] invalidResults =
+        [
+            "sqrt(-1)",
+            "pow(1e308, 2)",
+            "add(1e308, 1e308)",
+            "sub(-1e308, 1e308)",
+            "mul(1e308, 1e308)",
+            "div(1e308, 1e-308)",
+        ];
+        foreach (string expression in invalidResults)
+        {
+            Assert.Equal("Invalid numeric result", Assert.Throws<ExpressionEvaluationException>(
+                () => SE.ParseExpression(expression)(null)).Message);
+        }
+
+        Assert.Equal("Division by zero", Assert.Throws<ExpressionEvaluationException>(
+            () => SE.ParseExpression("div(1e308, 1e-308, 0)")(null)).Message);
+    }
+
+    [Theory]
+    [InlineData("round(2.5, 0)", 3d)]
+    [InlineData("round(-2.5, 0)", -3d)]
+    [InlineData("round(1.25, 1)", 1.3d)]
+    [InlineData("round(-1.25, 1)", -1.3d)]
+    [InlineData("round(7.164692098702749e-215, 230)", 7.164692098702749e-215)]
+    [InlineData("round(4.898568327955125e-190, 204)", 4.89856832795512e-190)]
+    [InlineData("round(6.663776354903525e-38, 52)", 6.66377635490352e-38)]
+    [InlineData("round(1e308, 308)", 1e308)]
+    [InlineData("round(5e-324, 308)", 0d)]
+    public void RoundUsesBoundedPrecisionAndTiesAwayFromZero(string expression, double expected)
+    {
+        Assert.Equal(expected, SE.ParseExpression(expression)(null));
+    }
+
+    [Fact]
+    public void RoundRejectsPrecisionAbove308()
+    {
+        Assert.Equal("Round precision is too large", Assert.Throws<ExpressionEvaluationException>(
+            () => SE.ParseExpression("round(1, 309)")(null)).Message);
+    }
+
+    [Fact]
+    public void VariadicNumericOperatorsEvaluateAndFlattenBeforeConversion()
+    {
+        Assert.Equal("later argument evaluated", Assert.Throws<InvalidOperationException>(
+            () => SE.ParseExpression("add(#Invalid, #Later)")(new NumericEvaluationModel { Invalid = "later argument evaluated" })).Message);
+
+        object?[] values = ["invalid", new ThrowingEnumerable()];
+        Assert.Equal("later list flattened", Assert.Throws<InvalidOperationException>(
+            () => SE.ParseExpression("add(#values)")(new { values })).Message);
     }
 
     [Fact]
@@ -109,7 +188,7 @@ public sealed class ArithmeticTests
         cycle.Add(cycle);
         var shared = new[] { 2, 3 };
 
-        Assert.Throws<InvalidOperationException>(() => SE.ParseExpression("add(#value, 1)")(new { value = cycle }));
+        Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("add(#value, 1)")(new { value = cycle }));
         Assert.Equal(10d, SE.ParseExpression("add([#value, #value])")(new { value = shared }));
     }
 }

@@ -75,27 +75,38 @@ internal static class ExpressionCompiler
             "upper" => model => ExpressionValue.From(ExpressionOperations.ToFalsyString(arguments[0](model)).ToUpperInvariant()),
             "trim" => model => ExpressionOperations.Trim(arguments[0](model)),
             "defined" => model => ExpressionValue.From(arguments[0](model).Kind is not (ExpressionValueKind.Missing or ExpressionValueKind.Null)),
-            "int" => model => ExpressionValue.From(Math.Truncate(arguments[0](model).ToNumber(true))),
-            "num" => model => ExpressionValue.From(ExpressionOperations.Num(arguments[0](model))),
-            "abs" => model => ExpressionValue.From(Math.Abs(arguments[0](model).ToNumber(true))),
-            "floor" => model => ExpressionValue.From(Math.Floor(arguments[0](model).ToNumber(true))),
-            "ceil" => model => ExpressionValue.From(Math.Ceiling(arguments[0](model).ToNumber(true))),
-            "sqrt" => model => ExpressionValue.From(Math.Sqrt(arguments[0](model).ToNumber(true))),
+            "int" => model => ExpressionOperations.NumericResult(Math.Truncate(arguments[0](model).ToNumber(true))),
+            "num" => model => ExpressionValue.From(arguments[0](model).ToNumber(true)),
+            "abs" => model => ExpressionOperations.NumericResult(Math.Abs(arguments[0](model).ToNumber(true))),
+            "floor" => model => ExpressionOperations.NumericResult(Math.Floor(arguments[0](model).ToNumber(true))),
+            "ceil" => model => ExpressionOperations.NumericResult(Math.Ceiling(arguments[0](model).ToNumber(true))),
+            "sqrt" => model => ExpressionOperations.NumericResult(Math.Sqrt(arguments[0](model).ToNumber(true))),
             "eq" => model => ExpressionValue.From(ExpressionOperations.LooseEquals(arguments[0](model), arguments[1](model))),
             "contains" => model => ExpressionValue.From(ExpressionOperations.Contains(arguments[0](model), arguments[1](model))),
             "startswith" => model => ExpressionValue.From(ExpressionOperations.StartsWith(arguments[0](model), arguments[1](model))),
             "endswith" => model => ExpressionValue.From(ExpressionOperations.EndsWith(arguments[0](model), arguments[1](model))),
             "in" => model => ExpressionValue.From(ExpressionOperations.In(arguments[0](model), arguments[1](model))),
-            "gt" => model => ExpressionValue.From(ExpressionOperations.Compare(arguments[0](model), arguments[1](model)) > 0),
-            "lt" => model => ExpressionValue.From(ExpressionOperations.Compare(arguments[0](model), arguments[1](model)) < 0),
+            "gt" => model => ExpressionValue.From(ExpressionOperations.GreaterThan(arguments[0](model), arguments[1](model))),
+            "lt" => model => ExpressionValue.From(ExpressionOperations.LessThan(arguments[0](model), arguments[1](model))),
             "match" => CompileMatch(arguments[0], arguments[1]),
             "and" => model => ExpressionOperations.EvaluateAnd(arguments, model),
             "or" => model => ExpressionOperations.EvaluateOr(arguments, model),
             "concat" => CompileConcat(arguments),
             "if" => model => arguments[0](model).IsTruthy() ? arguments[1](model) : arguments[2](model),
             "round" => model => ExpressionOperations.Round(arguments[0](model), arguments[1](model)),
-            "pow" => model => ExpressionValue.From(Math.Pow(arguments[0](model).ToNumber(true), arguments[1](model).ToNumber(true))),
-            "clamp" => model => ExpressionValue.From(Math.Min(Math.Max(arguments[0](model).ToNumber(true), arguments[1](model).ToNumber(true)), arguments[2](model).ToNumber(true))),
+            "pow" => model =>
+            {
+                var baseValue = arguments[0](model);
+                var exponent = arguments[1](model);
+                return ExpressionOperations.NumericResult(Math.Pow(baseValue.ToNumber(true), exponent.ToNumber(true)));
+            },
+            "clamp" => model =>
+            {
+                var value = arguments[0](model);
+                var minimum = arguments[1](model);
+                var maximum = arguments[2](model);
+                return ExpressionOperations.NumericResult(Math.Min(Math.Max(value.ToNumber(true), minimum.ToNumber(true)), maximum.ToNumber(true)));
+            },
             "add" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Add, "add"),
             "sub" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Subtract, "sub"),
             "mul" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Multiply, "mul"),
@@ -103,7 +114,7 @@ internal static class ExpressionCompiler
             "mod" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Modulo, "mod"),
             "min" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Minimum, "min"),
             "max" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Maximum, "max"),
-            _ => throw new InvalidOperationException("Unknown operator: " + operation),
+            _ => throw ExpressionParseException.WithoutPosition("invalid operator: " + operation),
         };
     }
 
@@ -111,7 +122,16 @@ internal static class ExpressionCompiler
     {
         if (TryGetConstant(pattern, out var constant) && constant.Kind == ExpressionValueKind.String && constant.IsTruthy())
         {
-            var regex = new Regex((string)constant.Value!, RegexOptions.CultureInvariant);
+            Regex regex;
+            try
+            {
+                regex = new Regex((string)constant.Value!, RegexOptions.CultureInvariant);
+            }
+            catch (ArgumentException exception)
+            {
+                throw ExpressionParseException.WithoutPosition("invalid regular expression: " + exception.Message);
+            }
+
             return model => ExpressionValue.From(regex.IsMatch(ExpressionOperations.ToFalsyString(input(model))));
         }
 
@@ -119,7 +139,22 @@ internal static class ExpressionCompiler
         {
             var runtimeInput = input(model);
             var runtimePattern = pattern(model);
-            return ExpressionValue.From(runtimePattern.Kind == ExpressionValueKind.String && runtimePattern.IsTruthy() && new Regex((string)runtimePattern.Value!, RegexOptions.CultureInvariant).IsMatch(ExpressionOperations.ToFalsyString(runtimeInput)));
+            if (runtimePattern.Kind != ExpressionValueKind.String || !runtimePattern.IsTruthy())
+            {
+                return ExpressionValue.From(false);
+            }
+
+            Regex runtimeRegex;
+            try
+            {
+                runtimeRegex = new Regex((string)runtimePattern.Value!, RegexOptions.CultureInvariant);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new ExpressionEvaluationException("Invalid regular expression: " + exception.Message);
+            }
+
+            return ExpressionValue.From(runtimeRegex.IsMatch(ExpressionOperations.ToFalsyString(runtimeInput)));
         };
     }
 

@@ -1,5 +1,7 @@
 #nullable enable
 
+using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace Simple.Expressions;
@@ -11,17 +13,7 @@ internal static class ExpressionOperations
             || (value.Kind == ExpressionValueKind.String && ((string)value.Value!).Length == 0);
 
     public static string ToFalsyString(ExpressionValue value)
-        => value.IsTruthy() ? value.ToJavaScriptString() : string.Empty;
-
-    public static double Num(ExpressionValue value)
-    {
-        if (value.Kind == ExpressionValueKind.Array)
-        {
-            throw new InvalidOperationException("Invalid numeric value");
-        }
-
-        return value.ToNumber(true);
-    }
+        => value.IsTruthy() ? value.ToText() : string.Empty;
 
     public static ExpressionValue Trim(ExpressionValue value)
     {
@@ -30,30 +22,17 @@ internal static class ExpressionOperations
             return value;
         }
 
-        string text = ToFalsyString(value);
-        int start = 0;
-        int end = text.Length;
-        while (start < end && IsEcmaScriptWhitespace(text[start]))
-        {
-            start++;
-        }
-
-        while (end > start && IsEcmaScriptWhitespace(text[end - 1]))
-        {
-            end--;
-        }
-
-        return ExpressionValue.From(text.Substring(start, end - start));
+        return ExpressionValue.From(ExpressionText.Trim(ToFalsyString(value)));
     }
 
     public static bool Contains(ExpressionValue left, ExpressionValue right)
-        => left.Kind == ExpressionValueKind.String && ((string)left.Value!).IndexOf(right.ToJavaScriptString(), StringComparison.Ordinal) >= 0;
+        => left.Kind == ExpressionValueKind.String && ((string)left.Value!).IndexOf(right.ToText(), StringComparison.Ordinal) >= 0;
 
     public static bool StartsWith(ExpressionValue left, ExpressionValue right)
-        => left.Kind == ExpressionValueKind.String && ((string)left.Value!).StartsWith(right.ToJavaScriptString(), StringComparison.Ordinal);
+        => left.Kind == ExpressionValueKind.String && ((string)left.Value!).StartsWith(right.ToText(), StringComparison.Ordinal);
 
     public static bool EndsWith(ExpressionValue left, ExpressionValue right)
-        => left.Kind == ExpressionValueKind.String && ((string)left.Value!).EndsWith(right.ToJavaScriptString(), StringComparison.Ordinal);
+        => left.Kind == ExpressionValueKind.String && ((string)left.Value!).EndsWith(right.ToText(), StringComparison.Ordinal);
 
     public static bool In(ExpressionValue value, ExpressionValue list)
         => ClrValueAdapter.TryGetArrayValues(list, out var values) && values.Any(item => LooseEquals(value, item));
@@ -75,26 +54,34 @@ internal static class ExpressionOperations
             return length;
         }
 
-        throw new InvalidOperationException("Input does not have a length");
+        throw new ExpressionEvaluationException("Input does not have a length");
     }
 
     public static ExpressionValue Round(ExpressionValue value, ExpressionValue decimals)
     {
         double places = decimals.ToNumber(true);
-        if (double.IsNaN(places) || double.IsInfinity(places) || places != Math.Truncate(places) || places < 0 || places > 9007199254740991d)
+        if (places != Math.Truncate(places) || places < 0)
         {
-            throw new InvalidOperationException("Round precision must be a non-negative safe integer");
+            throw new ExpressionEvaluationException("Round precision must be a non-negative safe integer");
         }
 
-        double factor = Math.Pow(10, places);
-        if (double.IsInfinity(factor))
+        if (places > 308)
         {
-            throw new InvalidOperationException("Round precision is too large");
+            throw new ExpressionEvaluationException("Round precision is too large");
         }
 
         double number = value.ToNumber(true);
-        double result = Math.Floor((number * factor) + 0.5) / factor;
-        return ExpressionValue.From(result == 0 && BitConverter.DoubleToInt64Bits(number) < 0 ? -0d : result);
+        return NumericResult(RoundAwayFromZero(number, (int)places));
+    }
+
+    public static ExpressionValue NumericResult(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            throw new ExpressionEvaluationException("Invalid numeric result");
+        }
+
+        return ExpressionValue.From(value);
     }
 
     public static ExpressionValue EvaluateAnd(List<Evaluator> arguments, ExpressionModel model)
@@ -131,7 +118,7 @@ internal static class ExpressionOperations
             var value = argument(model);
             if (value.IsTruthy())
             {
-                result += value.ToJavaScriptString();
+                result += value.ToText();
             }
         }
 
@@ -145,7 +132,7 @@ internal static class ExpressionOperations
         {
             if (value.IsTruthy())
             {
-                result += value.ToJavaScriptString();
+                result += value.ToText();
             }
         }
 
@@ -154,22 +141,33 @@ internal static class ExpressionOperations
 
     public static ExpressionValue EvaluateNumeric(List<Evaluator> arguments, ExpressionModel model, NumericOperation operation, string name)
     {
-        var values = new List<double>();
-        var activeEnumerables = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var argumentsValues = new List<ExpressionValue>(arguments.Count);
         foreach (var argument in arguments)
         {
-            var value = argument(model);
-            if (arguments.Count == 1 && value.Kind != ExpressionValueKind.Array)
-            {
-                throw new InvalidOperationException("operator " + name + " expects at least two arguments or one list argument");
-            }
+            argumentsValues.Add(argument(model));
+        }
 
+        if (argumentsValues.Count == 1 && argumentsValues[0].Kind != ExpressionValueKind.Array)
+        {
+            throw new ExpressionEvaluationException("Invalid Expression: operator " + name + " expects at least two arguments or one list argument");
+        }
+
+        var leaves = new List<ExpressionValue>();
+        var activeEnumerables = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        foreach (var value in argumentsValues)
+        {
             AddNumericValues(value);
+        }
+
+        var values = new List<double>(leaves.Count);
+        foreach (var leaf in leaves)
+        {
+            values.Add(leaf.ToNumber(true));
         }
 
         if (operation is NumericOperation.Subtract or NumericOperation.Divide or NumericOperation.Modulo && values.Count < 2)
         {
-            throw new InvalidOperationException(operation switch
+            throw new ExpressionEvaluationException(operation switch
             {
                 NumericOperation.Subtract => "Sub requires at least two values",
                 NumericOperation.Divide => "Div requires at least two values",
@@ -179,7 +177,7 @@ internal static class ExpressionOperations
 
         if (operation is NumericOperation.Minimum or NumericOperation.Maximum && values.Count == 0)
         {
-            throw new InvalidOperationException(operation == NumericOperation.Minimum ? "Min requires at least one value" : "Max requires at least one value");
+            throw new ExpressionEvaluationException(operation == NumericOperation.Minimum ? "Min requires at least one value" : "Max requires at least one value");
         }
 
         double result = values.Count == 0 ? 0d : values[0];
@@ -216,7 +214,7 @@ internal static class ExpressionOperations
                 case NumericOperation.Divide:
                     if (value == 0)
                     {
-                        throw new InvalidOperationException("Division by zero");
+                        throw new ExpressionEvaluationException("Division by zero");
                     }
 
                     result /= value;
@@ -224,7 +222,7 @@ internal static class ExpressionOperations
                 case NumericOperation.Modulo:
                     if (value == 0)
                     {
-                        throw new InvalidOperationException("Division by zero");
+                        throw new ExpressionEvaluationException("Division by zero");
                     }
 
                     result %= value;
@@ -238,27 +236,27 @@ internal static class ExpressionOperations
             }
         }
 
-        return ExpressionValue.From(result);
+        return NumericResult(result);
 
         void AddNumericValues(ExpressionValue value)
         {
             if (value.Kind != ExpressionValueKind.Array)
             {
-                values.Add(value.ToNumber(true));
+                leaves.Add(value);
                 return;
             }
 
             object enumerable = value.Value!;
             if (!activeEnumerables.Add(enumerable))
             {
-                throw new InvalidOperationException("Invalid numeric value");
+                throw new ExpressionEvaluationException("Invalid numeric value");
             }
 
             try
             {
                 if (!ClrValueAdapter.TryGetArrayValues(value, out var items))
                 {
-                    throw new InvalidOperationException("Invalid numeric value");
+                    throw new ExpressionEvaluationException("Invalid numeric value");
                 }
 
                 foreach (var item in items)
@@ -276,33 +274,38 @@ internal static class ExpressionOperations
     public static bool LooseEquals(ExpressionValue left, ExpressionValue right)
         => LooseEquals(left, right, new EqualityContext());
 
-    public static int Compare(ExpressionValue left, ExpressionValue right)
-    {
-        if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
-        {
-            left = ExpressionValue.From(left.ToJavaScriptString());
-        }
+    public static bool GreaterThan(ExpressionValue left, ExpressionValue right)
+        => TryCompare(left, right, out int comparison) && comparison > 0;
 
-        if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+    public static bool LessThan(ExpressionValue left, ExpressionValue right)
+        => TryCompare(left, right, out int comparison) && comparison < 0;
+
+    private static bool TryCompare(ExpressionValue left, ExpressionValue right, out int comparison)
+    {
+        if (IsBlankString(left) || IsBlankString(right))
         {
-            right = ExpressionValue.From(right.ToJavaScriptString());
+            comparison = 0;
+            return false;
         }
 
         if (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.String)
         {
-            return string.CompareOrdinal((string)left.Value!, (string)right.Value!);
+            comparison = string.CompareOrdinal((string)left.Value!, (string)right.Value!);
+            return true;
         }
 
-        double leftNumber = left.ToNumber();
-        double rightNumber = right.ToNumber();
-        return double.IsNaN(leftNumber) || double.IsNaN(rightNumber) ? 0 : leftNumber.CompareTo(rightNumber);
+        if (TryGetFiniteNumber(left, out double leftNumber) && TryGetFiniteNumber(right, out double rightNumber))
+        {
+            comparison = leftNumber.CompareTo(rightNumber);
+            return true;
+        }
+
+        comparison = 0;
+        return false;
     }
 
-    private static bool IsEcmaScriptWhitespace(char value)
-        => value is (>= '\u0009' and <= '\u000D')
-            or '\u0020' or '\u00A0' or '\u1680'
-            or (>= '\u2000' and <= '\u200A')
-            or '\u2028' or '\u2029' or '\u202F' or '\u205F' or '\u3000' or '\uFEFF';
+    private static bool IsBlankString(ExpressionValue value)
+        => value.Kind == ExpressionValueKind.String && ExpressionText.Trim((string)value.Value!).Length == 0;
 
     private static bool LooseEquals(ExpressionValue left, ExpressionValue right, EqualityContext context)
     {
@@ -329,22 +332,94 @@ internal static class ExpressionOperations
             return false;
         }
 
-        if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+        if (left.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object || right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
         {
-            return LooseEquals(ExpressionValue.From(left.ToJavaScriptString()), right, context);
+            return false;
         }
 
-        if (right.Kind is ExpressionValueKind.Array or ExpressionValueKind.Object)
+        if (left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String)
         {
-            return LooseEquals(left, ExpressionValue.From(right.ToJavaScriptString()), context);
+            return IsFiniteNumber(left) && ExpressionText.TryParseFiniteDecimal((string)right.Value!, out double number) && (double)left.Value! == number;
         }
 
-        if (left.Kind == ExpressionValueKind.Boolean || right.Kind == ExpressionValueKind.Boolean || (left.Kind == ExpressionValueKind.Number && right.Kind == ExpressionValueKind.String) || (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number))
+        if (left.Kind == ExpressionValueKind.String && right.Kind == ExpressionValueKind.Number)
         {
-            return left.ToNumber() == right.ToNumber();
+            return LooseEquals(right, left, context);
+        }
+
+        if (left.Kind == ExpressionValueKind.Boolean)
+        {
+            return TryGetFiniteNumber(right, out double number) && ((bool)left.Value! ? 1d : 0d) == number;
+        }
+
+        if (right.Kind == ExpressionValueKind.Boolean)
+        {
+            return LooseEquals(right, left, context);
         }
 
         return false;
+    }
+
+    private static bool TryGetFiniteNumber(ExpressionValue value, out double number)
+    {
+        if (value.Kind == ExpressionValueKind.Number && IsFiniteNumber(value))
+        {
+            number = (double)value.Value!;
+            return true;
+        }
+
+        if (value.Kind == ExpressionValueKind.String)
+        {
+            return ExpressionText.TryParseFiniteDecimal((string)value.Value!, out number);
+        }
+
+        number = 0;
+        return false;
+    }
+
+    private static bool IsFiniteNumber(ExpressionValue value)
+    {
+        double number = (double)value.Value!;
+        return !double.IsNaN(number) && !double.IsInfinity(number);
+    }
+
+    private static double RoundAwayFromZero(double value, int places)
+    {
+        ulong bits = unchecked((ulong)BitConverter.DoubleToInt64Bits(Math.Abs(value)));
+        int exponentBits = (int)((bits >> 52) & 0x7ff);
+        ulong fraction = bits & 0x000fffffffffffff;
+        BigInteger significand = exponentBits == 0 ? fraction : 0x0010000000000000 | fraction;
+        int binaryExponent = exponentBits == 0 ? -1074 : exponentBits - 1023 - 52;
+        BigInteger numerator = significand * BigInteger.Pow(5, places);
+        int shift = binaryExponent + places;
+
+        BigInteger rounded;
+        if (shift >= 0)
+        {
+            rounded = numerator << shift;
+        }
+        else
+        {
+            BigInteger divisor = BigInteger.One << -shift;
+            rounded = BigInteger.DivRem(numerator, divisor, out BigInteger remainder);
+            if ((remainder * 2) >= divisor)
+            {
+                rounded++;
+            }
+        }
+
+        if (value < 0)
+        {
+            rounded = -rounded;
+        }
+
+        string roundedText = rounded.ToString(CultureInfo.InvariantCulture) + "e-" + places.ToString(CultureInfo.InvariantCulture);
+        if (double.TryParse(roundedText, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
+        {
+            return result;
+        }
+
+        return value < 0 ? double.NegativeInfinity : double.PositiveInfinity;
     }
 
     private static bool StructuralArrayEquals(ExpressionValue left, ExpressionValue right, EqualityContext context)

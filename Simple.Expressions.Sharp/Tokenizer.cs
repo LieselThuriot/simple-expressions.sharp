@@ -16,7 +16,6 @@ internal enum TokenKind
 
 internal sealed class Tokenizer
 {
-    private static readonly System.Text.RegularExpressions.Regex s_numberPattern = new(@"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled);
     private readonly string _source;
 
     public Tokenizer(string source)
@@ -31,7 +30,7 @@ internal sealed class Tokenizer
 
     public void Next()
     {
-        while (Position < _source.Length && _source[Position] <= ' ')
+        while (Position < _source.Length && ExpressionText.IsWhiteSpace(_source[Position]))
         {
             Position++;
         }
@@ -94,7 +93,7 @@ internal sealed class Tokenizer
 
         ReadDelimited();
         Value = _source.Substring(start, Position - start);
-        if (s_numberPattern.IsMatch(Value))
+        if (ExpressionText.IsDecimalLiteral(Value))
         {
             Kind = TokenKind.Number;
             return;
@@ -105,7 +104,7 @@ internal sealed class Tokenizer
 
     private void ReadDelimited()
     {
-        while (Position < _source.Length && _source[Position] is not '(' and not ')' and not ',' and not '[' and not ']' && _source[Position] > ' ')
+        while (Position < _source.Length && _source[Position] is not '(' and not ')' and not ',' and not '[' and not ']' && !ExpressionText.IsWhiteSpace(_source[Position]))
         {
             Position++;
         }

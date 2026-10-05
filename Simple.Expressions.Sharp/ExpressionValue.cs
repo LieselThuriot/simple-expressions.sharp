@@ -1,8 +1,5 @@
 #nullable enable
 
-using System.Globalization;
-using System.Numerics;
-
 namespace Simple.Expressions;
 
 internal enum ExpressionValueKind
@@ -40,8 +37,9 @@ internal readonly struct ExpressionValue
 
     public static ExpressionValue From(double value)
     {
+        // Negative zero is normalized away; the engine never exposes -0.
         object boxed = value;
-        if (value == 0 && BitConverter.DoubleToInt64Bits(value) >= 0)
+        if (value == 0)
         {
             boxed = s_boxedZero;
         }
@@ -73,105 +71,39 @@ internal readonly struct ExpressionValue
             ExpressionValueKind.Null => 0,
             ExpressionValueKind.Boolean => (bool)Value! ? 1 : 0,
             ExpressionValueKind.Number => (double)Value!,
-            ExpressionValueKind.String => StringToNumber(Value, strict),
+            ExpressionValueKind.String => StringToNumber((string)Value!, strict),
             _ => double.NaN,
         };
 
         if (strict && (Kind is not (ExpressionValueKind.Number or ExpressionValueKind.String) || double.IsNaN(number) || double.IsInfinity(number)))
         {
-            throw new InvalidOperationException("Invalid numeric value");
+            throw new ExpressionEvaluationException("Invalid numeric value");
         }
 
         return number;
 
-        static double StringToNumber(object? value, bool strict)
+        static double StringToNumber(string value, bool strict)
         {
-            string text = ((string)value!).Trim();
-            if (text.Length == 0)
-            {
-                if (strict)
-                {
-                    throw new InvalidOperationException("Invalid numeric value");
-                }
-
-                return 0;
-            }
-
-            if (TryParseJavaScriptNumber(text, out double number))
+            if (ExpressionText.TryParseFiniteDecimal(value, out double number))
             {
                 return number;
             }
 
             if (strict)
             {
-                throw new InvalidOperationException("Invalid numeric value");
+                throw new ExpressionEvaluationException("Invalid numeric value");
             }
 
             return double.NaN;
         }
-
-        static bool TryParseJavaScriptNumber(string text, out double number)
-        {
-            if (text.Length > 2 && text[0] == '0')
-            {
-                int radix = text[1] switch
-                {
-                    'x' or 'X' => 16,
-                    'b' or 'B' => 2,
-                    'o' or 'O' => 8,
-                    _ => 0,
-                };
-                if (radix != 0)
-                {
-                    try
-                    {
-                        string digits = text.Substring(2);
-                        BigInteger integer;
-                        if (radix == 16)
-                        {
-                            if (!BigInteger.TryParse("0" + digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out integer))
-                            {
-                                number = 0;
-                                return false;
-                            }
-                        }
-                        else
-                        {
-                            integer = BigInteger.Zero;
-                            foreach (char digit in digits)
-                            {
-                                int value = digit - '0';
-                                if (value < 0 || value >= radix)
-                                {
-                                    number = 0;
-                                    return false;
-                                }
-
-                                integer = (integer * radix) + value;
-                            }
-                        }
-
-                        number = (double)integer;
-                        return true;
-                    }
-                    catch (Exception exception) when (exception is FormatException or OverflowException or ArgumentException)
-                    {
-                        number = 0;
-                        return false;
-                    }
-                }
-            }
-
-            return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out number);
-        }
     }
 
-    public string ToJavaScriptString() => Kind switch
+    public string ToText() => Kind switch
     {
         ExpressionValueKind.Missing => "undefined",
         ExpressionValueKind.Null => "null",
         ExpressionValueKind.Boolean => (bool)Value! ? "true" : "false",
-        ExpressionValueKind.Number => JavaScriptNumberFormatter.Format((double)Value!),
+        ExpressionValueKind.Number => ExpressionNumberFormatter.Format((double)Value!),
         ExpressionValueKind.String => (string)Value!,
         ExpressionValueKind.Array => ClrValueAdapter.ArrayToString(Value!),
         _ => "[object Object]",

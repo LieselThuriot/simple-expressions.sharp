@@ -2,6 +2,7 @@
 
 using System.Collections;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace Simple.Expressions;
 
@@ -83,17 +84,35 @@ internal static class ClrValueAdapter
     }
 
     public static string ArrayToString(object value)
+        => ArrayToString(value, new HashSet<object>(ReferenceEqualityComparer.Instance));
+
+    private static string ArrayToString(object value, HashSet<object> activeArrays)
     {
-        if (value is IReadOnlyList<ExpressionValue> expressionValues)
+        if (!activeArrays.Add(value))
         {
-            return string.Join(",", expressionValues.Select(ItemToString));
+            throw new ExpressionEvaluationException("Cyclic list value");
         }
 
-        return string.Join(",", ConvertItems((IEnumerable)value).Select(ItemToString));
+        try
+        {
+            IEnumerable<ExpressionValue> values = value is IReadOnlyList<ExpressionValue> expressionValues
+                ? expressionValues
+                : ConvertItems((IEnumerable)value);
+            return string.Join(",", values.Select(item => ItemToString(item, activeArrays)));
+        }
+        finally
+        {
+            activeArrays.Remove(value);
+        }
     }
 
-    private static string ItemToString(ExpressionValue item)
-        => item.Kind is ExpressionValueKind.Missing or ExpressionValueKind.Null ? string.Empty : item.ToJavaScriptString();
+    private static string ItemToString(ExpressionValue item, HashSet<object> activeArrays)
+        => item.Kind switch
+        {
+            ExpressionValueKind.Missing or ExpressionValueKind.Null => string.Empty,
+            ExpressionValueKind.Array => ArrayToString(item.Value!, activeArrays),
+            _ => item.ToText(),
+        };
 
     private static IEnumerable<ExpressionValue> ConvertItems(IEnumerable source)
     {
@@ -125,5 +144,12 @@ internal static class ClrValueAdapter
         }
 
         return count;
+    }
+
+    private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+    {
+        public static ReferenceEqualityComparer Instance { get; } = new();
+        public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
+        public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
     }
 }

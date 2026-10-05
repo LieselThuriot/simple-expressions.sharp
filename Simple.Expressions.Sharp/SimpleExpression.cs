@@ -15,7 +15,7 @@ public sealed class SimpleExpression
     {
         // Upstream's SimpleExpression constructor reports "whitespace";
         // "formatting" is reserved for parseExpression.
-        if (expression is null || expression.Trim().Length == 0)
+        if (expression is null || ExpressionText.Trim(expression).Length == 0)
         {
             throw ExpressionParseException.WithoutPosition("whitespace");
         }

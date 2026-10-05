@@ -24,14 +24,23 @@ public sealed class CacheTests
     }
 
     [Fact]
-    public void CacheKeysKeepBooleanAndStringExpressionsSeparate()
+    public void BooleanCacheKeysShareLowercaseStringEntries()
     {
-        var boolean = SE.Get(true);
-        var text = SE.Get("True");
+        Assert.Same(SE.Get(true), SE.Get("true"));
+        Assert.Same(SE.Get(false), SE.Get("false"));
+        Assert.NotSame(SE.Get(true), SE.Get("True"));
+    }
 
-        Assert.NotSame(boolean, text);
-        Assert.True(boolean.Evaluate(new { }));
-        Assert.True(text.Evaluate(new { }));
+    [Fact]
+    public void ClearOptionsSelectCachesWithoutRestoringTheOldDictionaryApi()
+    {
+        var parsed = SE.ParseExpression("eq(1, 1)");
+        var expression = SE.Get("eq(1, 1)");
+
+        SE.Clear(new Simple.Expressions.CacheClearOptions(parsed: true));
+
+        Assert.NotSame(parsed, SE.ParseExpression("eq(1, 1)"));
+        Assert.Same(expression, SE.Get("eq(1, 1)"));
     }
 
     [Fact]

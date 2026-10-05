@@ -19,33 +19,32 @@ public static class SimpleExpressions
 
     public static SimpleExpression Get(string expression)
     {
-        string key = "s:" + expression;
+        string key = expression;
         return s_simpleCache.GetOrCreate(key, _ => new SimpleExpression(expression));
     }
 
     public static SimpleExpression Get(bool expression)
     {
-        string key = expression ? "b:true" : "b:false";
-
+        string key = expression ? "true" : "false";
         return s_simpleCache.GetOrCreate(key, _ => new SimpleExpression(expression));
     }
 
-    public static void Clear(Dictionary<string, bool>? options = null)
+    public static void Clear(CacheClearOptions? options = null)
     {
-        bool clearParsed = options is null || (options.TryGetValue("parsed", out bool parsed) && parsed);
-        bool clearExpressions = options is null || (options.TryGetValue("expression", out bool expression) && expression);
-        if (options is null)
+        if (!options.HasValue)
         {
-            RuntimeCaches.Clear(s_parseCache, s_simpleCache);
+            RuntimeCaches.ClearAll();
             return;
         }
 
-        if (clearParsed)
+        CacheClearOptions optionsValue = options.GetValueOrDefault();
+
+        if (optionsValue.Parsed.GetValueOrDefault())
         {
             RuntimeCaches.Clear(s_parseCache);
         }
 
-        if (clearExpressions)
+        if (optionsValue.Expression.GetValueOrDefault())
         {
             RuntimeCaches.Clear(s_simpleCache);
         }
@@ -73,7 +72,7 @@ public static class SimpleExpressions
             throw new ArgumentNullException(nameof(expression));
         }
 
-        expression = expression.Trim();
+        expression = ExpressionText.Trim(expression);
         if (expression.Length == 0)
         {
             throw ExpressionParseException.WithoutPosition("formatting");

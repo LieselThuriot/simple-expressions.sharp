@@ -31,7 +31,11 @@ internal sealed class ExpressionParser(string expression)
             }
             case TokenKind.Number:
             {
-                double value = double.Parse(_tokenizer.Value, System.Globalization.CultureInfo.InvariantCulture);
+                if (!ExpressionText.TryParseFiniteDecimal(_tokenizer.Value, out double value))
+                {
+                    throw ExpressionParseException.WithoutPosition("Invalid numeric value");
+                }
+
                 _tokenizer.Next();
                 return ExpressionCompiler.Constant(ExpressionValue.From(value));
             }

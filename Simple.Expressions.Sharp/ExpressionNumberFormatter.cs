@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Simple.Expressions;
 
-internal static class JavaScriptNumberFormatter
+internal static class ExpressionNumberFormatter
 {
     private const int PlainNotationMinExponent = -6;
     private const int PlainNotationMaxExponent = 21;

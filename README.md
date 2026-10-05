@@ -45,7 +45,7 @@ dotnet run --project Simple.Expressions.Sharp.Sample
 
 ## Syntax
 
-Constants support case-insensitive Booleans, signed, decimal, and exponent numeric literals, single-, double-, or backtick-quoted strings, and recursive list literals in square brackets. References begin with `#`. For a dotted reference, the evaluator first checks for an exact dotted key and then traverses nested object properties. References cannot contain empty segments or the reserved segments `__proto__`, `constructor`, and `prototype`; these restrictions are retained for compatibility with the TypeScript reference.
+Constants support case-insensitive Booleans, finite signed decimal and exponent numeric literals, single-, double-, or backtick-quoted strings, and recursive list literals in square brackets. References begin with `#`. For a dotted reference, the evaluator first checks for an exact dotted key and then traverses nested object properties. References cannot contain empty segments or the reserved segments `__proto__`, `constructor`, and `prototype`; these restrictions are retained for compatibility with the TypeScript reference.
 
 Operators are case-insensitive. `and` and `or` are variadic and short-circuit. `if` is lazy and evaluates only its selected branch. `in` requires a list; `contains`, `startswith`, and `endswith` require a string left operand. `len` returns `0` for nullish values, a string/array length, or an exact `length` property, and throws otherwise.
 
@@ -53,9 +53,9 @@ Operators are case-insensitive. `and` and `or` are variadic and short-circuit. `
 
 `in` requires a list and uses the same loose equality as `eq`. `trim` preserves null and missing values; other falsey values become empty strings before trimming. `defined` is false only for null and missing values. Lists may contain nested lists, model references, and operator expressions.
 
-Numeric operators accept finite numeric values and finite numeric strings as scalar leaves. They throw `Invalid numeric value` for booleans, null or missing values, objects, scalar lists, blank or invalid strings, nonfinite inputs, and active enumerable cycles. Arithmetic results may be nonfinite. `add([])` is zero and `mul([])` is one. `div` and `mod` throw `Division by zero` for zero divisors. `round` requires a non-negative safe integer precision.
+Numeric operators accept finite numeric values and finite signed decimal/exponent strings as scalar leaves, using the same grammar as literals (including `.5` and `5.`). Radix forms, blank strings, booleans, null or missing values, objects, scalar lists, nonfinite values, and active enumerable cycles throw `Invalid numeric value`. Variadic numeric operators evaluate and recursively flatten every argument depth-first before converting any scalar. Every numeric result must be finite or throws `Invalid numeric result`; `div` and `mod` use the more specific `Division by zero` error for zero divisors. `add([])` is zero and `mul([])` is one. `round` accepts integer precision from 0 through 308 and rounds exact runtime-number midpoint values away from zero without scale-overflow intermediates.
 
-The evaluator uses JavaScript-style truthiness, loose equality, and value conversion where those rules can be represented by .NET values. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable. Empty or non-string patterns return `false`.
+The evaluator retains JavaScript-style truthiness. Equality is explicit: null and missing equal only each other; equal primitive kinds compare directly; numbers compare with finite decimal strings; booleans compare with numbers and valid numeric strings; and blank strings are not numeric. Lists compare structurally only with lists, objects only with objects, and collection/scalar or list/object pairs are false. Structural equality is cycle-safe. Comparisons use ordinal ordering for string/string pairs and numeric ordering for finite numbers and valid finite decimal strings; booleans, nullish values, blanks, invalid strings, and collections are not comparable. `match` uses .NET regular expressions, so patterns that rely on JavaScript-specific regex syntax are not portable. Empty or non-string patterns return `false`.
 
 ## Differences from the TypeScript reference
 
@@ -66,9 +66,9 @@ This port follows the [TypeScript reference](https://github.com/LieselThuriot/si
 | Regex engine | JavaScript regular expressions | .NET regular expressions |
 | Unicode casing | JavaScript Unicode casing | .NET invariant casing |
 
-Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range.
+Numbers use the same formatting rule as the TypeScript reference: the shortest round-trip decimal, plain notation for magnitudes in `[1e-6, 1e21)`, and lowercase exponent notation outside that range. The shortest round-trip guarantee relies on `double.ToString("R")`, which is only shortest on .NET Core 3.0 and later; .NET Framework consumers of the `netstandard2.0` build may see longer digit strings. Scalar numeric results and scalar model values normalize negative zero to zero. Live containers are not copied, so a negative zero nested inside a model-supplied container remains untouched.
 
-Structural equality applies to lists and objects and is cycle-safe. Loose equality remains non-throwing; strict numeric conversion is used by numeric operators.
+Expression trimming, tokenizer separators, `trim`, and numeric strings share the Unicode White_Space set `U+0009`-`U+000D`, `U+0020`, `U+0085`, `U+00A0`, `U+1680`, `U+2000`-`U+200A`, `U+2028`, `U+2029`, `U+202F`, `U+205F`, and `U+3000`. `U+FEFF` is intentionally excluded. Converting a cyclic list to text throws `Cyclic list value`.
 
 ## Model access
 
@@ -90,7 +90,15 @@ Sequences are read lazily, so `in(...)` can stop at the first match. A single-pa
 
 ## Caching
 
-Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both use the configured FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Concurrent misses for one key share a single factory result, while failed factories are retried. Use `Clear()` or `Clear` with `parsed` and `expression` option keys, `SetCacheLimit` to change both limits, and `DisableCaches`/`EnableCaches` to control their contents and state. Reflection accessors use a separate internal cache. Constant regex patterns are compiled eagerly into their parsed evaluator; model-supplied patterns are compiled when evaluated.
+Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached by default. Both use the configured FIFO limit of 1,000 entries; cache hits do not refresh FIFO order. Concurrent misses for one key share a single factory result, while failed factories are retried. Boolean cache keys are lowercase, so `Get(true)` shares the `Get("true")` entry while `Get("True")` remains distinct. Use `Clear()` or `Clear` with a `CacheClearOptions` selecting `parsed` and/or `expression`, `SetCacheLimit` to change both limits, and `DisableCaches`/`EnableCaches` to control their contents and state. Reflection accessors use a separate internal cache. Constant regex patterns are compiled eagerly into their parsed evaluator; model-supplied patterns are compiled when evaluated.
+
+## Errors
+
+Parse-time failures (malformed syntax, unknown operators, non-finite literals, and invalid constant regex patterns) throw `ExpressionParseException`. Failures while evaluating a parsed expression (invalid numeric values, division by zero, invalid references, cyclic lists, and invalid model-supplied regex patterns) throw `ExpressionEvaluationException`, which extends `InvalidOperationException`. Passing a value that is neither a string nor a Boolean throws an `ArgumentException`.
+
+## Regex semantics
+
+`match` uses .NET regular expressions, not JavaScript ones. `\d`, `\w`, and `\s` are Unicode-aware (`\d` matches Arabic-Indic digits), and `$` also matches before a final `\n`. Model-supplied patterns are rebuilt on every evaluation and have no timeout. These differences are intentional and pinned by local tests.
 
 ## Security
 
