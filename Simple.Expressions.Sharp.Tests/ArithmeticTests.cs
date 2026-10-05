@@ -1,7 +1,7 @@
 using System.Collections;
 using SE = Simple.Expressions.SimpleExpressions;
 
-namespace Simple.Expressions.Tests;
+namespace Simple.Expressions.Sharp.Tests;
 
 public sealed class ArithmeticTests
 {
@@ -26,10 +26,7 @@ public sealed class ArithmeticTests
     [InlineData("mod([20, [6, 3]])", 2d)]
     [InlineData("min([3, [1, 2]])", 1d)]
     [InlineData("max([1, [3, 2]])", 3d)]
-    public void NumericOperatorsDepthFirstFlattenOneRuntimeList(string expression, double expected)
-    {
-        Assert.Equal(expected, SE.ParseExpression(expression)(null));
-    }
+    public void NumericOperatorsDepthFirstFlattenOneRuntimeList(string expression, double expected) => Assert.Equal(expected, SE.ParseExpression(expression)(null));
 
     [Theory]
     [InlineData("add(#values)", 6d)]
@@ -39,10 +36,7 @@ public sealed class ArithmeticTests
     [InlineData("mod(#values)", 1d)]
     [InlineData("min(#values)", 1d)]
     [InlineData("max(#values)", 3d)]
-    public void NumericOperatorsAcceptOneRuntimeList(string expression, double expected)
-    {
-        Assert.Equal(expected, SE.ParseExpression(expression)(new { values = s_values }));
-    }
+    public void NumericOperatorsAcceptOneRuntimeList(string expression, double expected) => Assert.Equal(expected, SE.ParseExpression(expression)(new { values = s_values }));
 
     [Fact]
     public void NumericOperatorLeafCountsUseFlattenedValues()
@@ -64,10 +58,7 @@ public sealed class ArithmeticTests
     [InlineData("mod(1)", "Invalid Expression: operator mod expects at least two arguments or one list argument")]
     [InlineData("min(1)", "Invalid Expression: operator min expects at least two arguments or one list argument")]
     [InlineData("max(1)", "Invalid Expression: operator max expects at least two arguments or one list argument")]
-    public void SingleNumericArgumentMustEvaluateToAList(string expression, string message)
-    {
-        Assert.Equal(message, Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression(expression)(null)).Message);
-    }
+    public void SingleNumericArgumentMustEvaluateToAList(string expression, string message) => Assert.Equal(message, Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression(expression)(null)).Message);
 
     [Fact]
     public void NumericOperatorsRejectNonNumericOrNonfiniteLeaves()
@@ -75,7 +66,7 @@ public sealed class ArithmeticTests
         object?[] invalid = [true, null, new object(), "", " ", "invalid", double.NaN, double.PositiveInfinity];
         foreach (object? value in invalid)
         {
-            var exception = Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("add([1, #value])")(new { value }));
+            ExpressionEvaluationException exception = Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("add([1, #value])")(new { value }));
             Assert.Equal("Invalid numeric value", exception.Message);
         }
 
@@ -157,10 +148,7 @@ public sealed class ArithmeticTests
     [InlineData("round(6.663776354903525e-38, 52)", 6.66377635490352e-38)]
     [InlineData("round(1e308, 308)", 1e308)]
     [InlineData("round(5e-324, 308)", 0d)]
-    public void RoundUsesBoundedPrecisionAndTiesAwayFromZero(string expression, double expected)
-    {
-        Assert.Equal(expected, SE.ParseExpression(expression)(null));
-    }
+    public void RoundUsesBoundedPrecisionAndTiesAwayFromZero(string expression, double expected) => Assert.Equal(expected, SE.ParseExpression(expression)(null));
 
     [Fact]
     public void RoundRejectsPrecisionAbove308()
@@ -183,10 +171,12 @@ public sealed class ArithmeticTests
     [Fact]
     public void ActiveEnumerableCyclesAreRejectedButRepeatedListsAreAllowed()
     {
-        var cycle = new ArrayList();
-        cycle.Add(1);
+        var cycle = new ArrayList
+        {
+            1
+        };
         cycle.Add(cycle);
-        var shared = new[] { 2, 3 };
+        int[] shared = [2, 3];
 
         Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("add(#value, 1)")(new { value = cycle }));
         Assert.Equal(10d, SE.ParseExpression("add([#value, #value])")(new { value = shared }));

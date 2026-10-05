@@ -50,20 +50,11 @@ public static class SimpleExpressions
         }
     }
 
-    public static void SetCacheLimit(int limit)
-    {
-        RuntimeCaches.SetLimit(limit);
-    }
+    public static void SetCacheLimit(int limit) => RuntimeCaches.SetLimit(limit);
 
-    public static void DisableCaches()
-    {
-        RuntimeCaches.Disable();
-    }
+    public static void DisableCaches() => RuntimeCaches.Disable();
 
-    public static void EnableCaches()
-    {
-        RuntimeCaches.Enable();
-    }
+    public static void EnableCaches() => RuntimeCaches.Enable();
 
     internal static Evaluator GetParsedExpression(string expression, Func<string, Evaluator> factory)
     {

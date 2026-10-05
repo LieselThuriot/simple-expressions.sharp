@@ -118,7 +118,11 @@ internal sealed class Tokenizer
         {
             char character = _source[Position];
             if (character == '\\')
-            { slashCount++; Position++; continue; }
+            {
+                slashCount++;
+                Position++;
+                continue;
+            }
 
             if (character == quote && slashCount % 2 == 0)
             {

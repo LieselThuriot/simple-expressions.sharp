@@ -47,7 +47,7 @@ internal static class ExpressionNumberFormatter
         int pointIndex = mantissa.IndexOf('.');
         string digits = pointIndex < 0 ? mantissa : mantissa.Remove(pointIndex, 1);
         int leadingExponent = exponent + (pointIndex < 0 ? mantissa.Length : pointIndex) - 1;
-        string text = leadingExponent >= PlainNotationMinExponent && leadingExponent < PlainNotationMaxExponent
+        string text = leadingExponent is >= PlainNotationMinExponent and < PlainNotationMaxExponent
             ? ToPlainNotation(digits, leadingExponent)
             : ToExponentNotation(digits, leadingExponent);
 

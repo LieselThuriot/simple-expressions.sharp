@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Attributes;
-using Simple.Expressions;
 
-namespace Simple.Expressions.Benchmarks;
+namespace Simple.Expressions.Sharp.Benchmarks;
 
 /// <summary>
 /// Measures the per-evaluation cost of the model access path. Expression parsing is cached
@@ -19,7 +18,7 @@ public class EvaluationBenchmarks
     /// Twenty distinct rules, as a rules-engine caller would have. Each one currently pays for
     /// a full re-serialization of the same unchanged model.
     /// </summary>
-    private static readonly string[] RuleSet =
+    private static readonly string[] s_ruleSet =
     [
         "eq(#Score, 8)", "gt(#Score, 5)", "lt(#Score, 10)", "defined(#Score)",
         "eq(#User.Name, \"Ada\")", "startswith(#User.Name, \"A\")", "endswith(#User.Name, \"a\")",
@@ -47,7 +46,7 @@ public class EvaluationBenchmarks
         SimpleExpressions.ExecuteExpression(_smallModel, SimpleRule);
         SimpleExpressions.ExecuteExpression(_smallModel, DottedRule);
         SimpleExpressions.ExecuteExpression(_smallModel, MembershipRule);
-        foreach (string rule in RuleSet)
+        foreach (string rule in s_ruleSet)
         {
             SimpleExpressions.ParseExpression(rule)(_smallModel);
         }
@@ -63,7 +62,7 @@ public class EvaluationBenchmarks
     public int RuleSet_SmallModel()
     {
         int matched = 0;
-        foreach (string rule in RuleSet)
+        foreach (string rule in s_ruleSet)
         {
             if (SimpleExpressions.ExecuteExpression(_smallModel, rule))
             {
@@ -78,7 +77,7 @@ public class EvaluationBenchmarks
     public int RuleSet_LargeModel()
     {
         int matched = 0;
-        foreach (string rule in RuleSet)
+        foreach (string rule in s_ruleSet)
         {
             if (SimpleExpressions.ExecuteExpression(_largeModel, rule))
             {

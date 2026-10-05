@@ -1,17 +1,17 @@
 using SE = Simple.Expressions.SimpleExpressions;
 
-namespace Simple.Expressions.Tests;
+namespace Simple.Expressions.Sharp.Tests;
 
 public sealed class PortSpecificTests
 {
-    private static readonly int[] model = [1, 2];
-    private static readonly int[] modelArray = [2, 3];
+    private static readonly int[] s_model = [1, 2];
+    private static readonly int[] s_modelArray = [2, 3];
 
     [Fact]
     public void StructuralEqualityIsSupportedForPortModels()
     {
-        Assert.True(SE.ExecuteExpression(new { a = model, b = model }, "eq(#a, #b)"));
-        Assert.True(SE.ExecuteExpression(new { a = new object[] { 1, modelArray }, b = new object[] { 1, modelArray } }, "eq(#a, #b)"));
+        Assert.True(SE.ExecuteExpression(new { a = s_model, b = s_model }, "eq(#a, #b)"));
+        Assert.True(SE.ExecuteExpression(new { a = new object[] { 1, s_modelArray }, b = new object[] { 1, s_modelArray } }, "eq(#a, #b)"));
         Assert.True(SE.ExecuteExpression(new { a = new { x = 1 }, b = new { x = 1 } }, "eq(#a, #b)"));
     }
 
@@ -71,8 +71,8 @@ public sealed class PortSpecificTests
     [Fact]
     public void SimpleExpressionConstructorsArePublic()
     {
-        Assert.True(new Simple.Expressions.SimpleExpression(true).Evaluate(new { }));
-        Assert.Equal("ok", new Simple.Expressions.SimpleExpression("\"ok\"").EvaluateValue(new { }));
+        Assert.True(new SimpleExpression(true).Evaluate(new { }));
+        Assert.Equal("ok", new SimpleExpression("\"ok\"").EvaluateValue(new { }));
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class PortSpecificTests
         Assert.Equal("value", SE.ParseExpression("trim(#value)")(new { value = "\u0085\u2000value\u3000" }));
         Assert.Equal("\uFEFFvalue\uFEFF", SE.ParseExpression("trim(#value)")(new { value = "\uFEFFvalue\uFEFF" }));
         Assert.True(SE.ExecuteExpression(null, "\u0085 and\u2000(true,\u3000true) \u2029"));
-        Assert.Throws<Simple.Expressions.ExpressionParseException>(() => SE.ParseExpression("\uFEFFtrue\uFEFF"));
+        Assert.Throws<ExpressionParseException>(() => SE.ParseExpression("\uFEFFtrue\uFEFF"));
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class PortSpecificTests
         Assert.Equal(0L, BitConverter.DoubleToInt64Bits(value));
         Assert.Equal(string.Empty, SE.ParseExpression("concat(#value, \"\")")(new { value = -0d }));
 
-        var nested = new object[] { -0d };
+        object[] nested = [-0d];
         Assert.Same(nested, SE.ParseExpression("#value")(new { value = nested }));
         Assert.True(BitConverter.DoubleToInt64Bits((double)nested[0]) < 0);
     }
@@ -142,15 +142,12 @@ public sealed class PortSpecificTests
     [InlineData(0.000001, "0.000001")]
     [InlineData(1e-7, "1e-7")]
     [InlineData(-1.5, "-1.5")]
-    public void NumberTextUsesShortestRoundTripDigits(double value, string expected)
-    {
-        Assert.Equal(expected, SE.ParseExpression("concat(#value, \"\")")(new { value })?.ToString());
-    }
+    public void NumberTextUsesShortestRoundTripDigits(double value, string expected) => Assert.Equal(expected, SE.ParseExpression("concat(#value, \"\")")(new { value })?.ToString());
 
     [Fact]
     public void ParseFailuresUseExpressionParseException()
     {
-        foreach (var expression in new[] { "1e309", "eq(1", "match(#a, \"(\")" })
+        foreach (string? expression in new[] { "1e309", "eq(1", "match(#a, \"(\")" })
         {
             Assert.Throws<ExpressionParseException>(() => SE.ParseExpression(expression));
         }
@@ -169,14 +166,12 @@ public sealed class PortSpecificTests
     }
 
     [Fact]
-    public void MatchEvaluatesInputBeforePatternValidity()
-    {
-        Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("match(num(\"x\"), #p)")(new { p = 1 }));
-    }
+    public void MatchEvaluatesInputBeforePatternValidity() => Assert.Throws<ExpressionEvaluationException>(() => SE.ParseExpression("match(num(\"x\"), #p)")(new { p = 1 }));
 
     [Fact]
     public void RegexUsesDocumentedDotNetSemantics()
     {
         Assert.True(SE.ExecuteExpression(new { v = "\u0663", p = @"^\d$" }, "match(#v, #p)"));
         Assert.True(SE.ExecuteExpression(new { v = "a\n", p = "a$" }, "match(#v, #p)"));
-    }}
+    }
+}

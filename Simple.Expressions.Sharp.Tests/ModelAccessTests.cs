@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text.Json.Serialization;
 using SE = Simple.Expressions.SimpleExpressions;
 
-namespace Simple.Expressions.Tests;
+namespace Simple.Expressions.Sharp.Tests;
 
 /// <summary>
 /// Covers reading models by reflection. None of this was reachable while models were flattened
@@ -14,8 +14,22 @@ public class ModelAccessTests
 {
     private sealed class MatchEvaluationModel(List<string> reads, string pattern)
     {
-        public string Input { get { reads.Add("input"); return "value"; } }
-        public string Pattern { get { reads.Add("pattern"); return pattern; } }
+        public string Input
+        {
+            get
+            {
+                reads.Add("input");
+                return "value";
+            }
+        }
+        public string Pattern
+        {
+            get
+            {
+                reads.Add("pattern");
+                return pattern;
+            }
+        }
     }
 
     public ModelAccessTests()
@@ -252,10 +266,7 @@ public class ModelAccessTests
     [InlineData(7ul)]
     [InlineData(7f)]
     [InlineData(7d)]
-    public void EveryNumericPrimitiveWidensToANumber(object value)
-    {
-        Assert.Equal(7d, SE.ParseExpression("#value")(new { value }));
-    }
+    public void EveryNumericPrimitiveWidensToANumber(object value) => Assert.Equal(7d, SE.ParseExpression("#value")(new { value }));
 
     [Fact]
     public void DecimalsAndCharsCoerce()
@@ -285,7 +296,7 @@ public class ModelAccessTests
     [Fact]
     public void ReusedEvaluatorsSeeEachModelTheyAreGiven()
     {
-        var evaluator = SE.ParseExpression("concat(#Name, \"!\")");
+        Func<object?, object?> evaluator = SE.ParseExpression("concat(#Name, \"!\")");
 
         Assert.Equal("Ada!", evaluator(new Person { Name = "Ada" }));
         Assert.Equal("Grace!", evaluator(new Person { Name = "Grace" }));
@@ -299,7 +310,7 @@ public class ModelAccessTests
         Assert.Equal(["input", "pattern"], reads);
     }
 
-    private static readonly int[] model = [1, 2, 3];
+    private static readonly int[] s_model = [1, 2, 3];
 
     // --- roots --------------------------------------------------------------------------
 
@@ -309,6 +320,6 @@ public class ModelAccessTests
         Assert.True(SE.ExecuteExpression(null, "empty(#value)"));
         Assert.False(SE.ExecuteExpression(42, "defined(#value)"));
         Assert.False(SE.ExecuteExpression("text", "defined(#value)"));
-        Assert.False(SE.ExecuteExpression(model, "defined(#value)"));
+        Assert.False(SE.ExecuteExpression(s_model, "defined(#value)"));
     }
 }

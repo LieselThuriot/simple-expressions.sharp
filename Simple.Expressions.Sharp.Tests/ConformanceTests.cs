@@ -1,11 +1,12 @@
 #nullable enable
 
+using Simple;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SE = Simple.Expressions.SimpleExpressions;
 using StjObject = System.Text.Json.Nodes.JsonObject;
 
-namespace Simple.Expressions.Tests;
+namespace Simple.Expressions.Sharp.Tests;
 
 public sealed class ConformanceTests
 {
@@ -18,25 +19,25 @@ public sealed class ConformanceTests
     {
         "$comment", "id", "expression", "model", "value", "truthy", "error",
     };
-    private static readonly IReadOnlyDictionary<string, StjObject> Cases = LoadCases();
+    private static readonly IReadOnlyDictionary<string, StjObject> s_cases = LoadCases();
 
     [Theory]
     [MemberData(nameof(CaseIds))]
     public void MatchesSpecificationV1(string id)
     {
-        var item = Cases[id];
+        StjObject item = s_cases[id];
         string expression = (string)item["expression"]!;
         object? model = ParseModel(item);
 
         if (item.ContainsKey("error"))
         {
-            var error = item["error"]!;
-            var exception = Assert.ThrowsAny<Exception>(() => SE.ParseExpression(expression)(model));
+            JsonNode error = item["error"]!;
+            Exception exception = Assert.ThrowsAny<Exception>(() => SE.ParseExpression(expression)(model));
             Assert.Contains((string)error!, exception.Message);
         }
         else if (item.ContainsKey("truthy"))
         {
-            var truthy = item["truthy"]!;
+            JsonNode truthy = item["truthy"]!;
             Assert.Equal((bool)truthy!, SE.ExecuteExpression(model, expression));
         }
         else
@@ -50,7 +51,7 @@ public sealed class ConformanceTests
         get
         {
             var data = new TheoryData<string>();
-            foreach (string? id in Cases.Keys.OrderBy(value => value, StringComparer.Ordinal))
+            foreach (string? id in s_cases.Keys.OrderBy(value => value, StringComparer.Ordinal))
             {
                 data.Add(id);
             }
@@ -81,7 +82,10 @@ public sealed class ConformanceTests
     private static void AssertValue(JsonNode? expected, object? actual)
     {
         if (expected is null || expected.GetValueKind() == JsonValueKind.Null)
-        { Assert.Null(actual); return; }
+        {
+            Assert.Null(actual);
+            return;
+        }
 
         switch (expected.GetValueKind())
         {
@@ -96,8 +100,8 @@ public sealed class ConformanceTests
                 Assert.Equal(expected.GetValue<string>(), Assert.IsType<string>(actual));
                 break;
             case JsonValueKind.Array:
-                object?[] values = Assert.IsAssignableFrom<object?[]>(actual);
-                var expectedValues = expected.AsArray();
+                object?[] values = Assert.IsType<object?[]>(actual, exactMatch: false);
+                JsonArray expectedValues = expected.AsArray();
                 Assert.Equal(expectedValues.Count, values.Length);
                 for (int index = 0; index < values.Length; index++)
                 {
@@ -106,10 +110,10 @@ public sealed class ConformanceTests
 
                 break;
             case JsonValueKind.Object:
-                var actualObject = Assert.IsAssignableFrom<IDictionary<string, object?>>(actual);
-                var expectedObject = expected.AsObject();
+                IDictionary<string, object?> actualObject = Assert.IsType<IDictionary<string, object?>>(actual, exactMatch: false);
+                StjObject expectedObject = expected.AsObject();
                 Assert.Equal(expectedObject.Count, actualObject.Count);
-                foreach (var property in expectedObject)
+                foreach (KeyValuePair<string, JsonNode?> property in expectedObject)
                 {
                     Assert.True(actualObject.ContainsKey(property.Key));
                     AssertValue(property.Value, actualObject[property.Key]);
@@ -146,18 +150,20 @@ public sealed class ConformanceTests
     }
 
     [Theory]
+#pragma warning disable xUnit1044 // Avoid using TheoryData type arguments that are not serializable
     [MemberData(nameof(InvalidCaseShapes))]
+#pragma warning restore xUnit1044 // Avoid using TheoryData type arguments that are not serializable
     public void CasesRequireValidShape(StjObject item)
         => Assert.Throws<InvalidDataException>(() => ValidateCase(item));
 
-    public static TheoryData<StjObject> InvalidCaseShapes => new()
-    {
+    public static TheoryData<StjObject> InvalidCaseShapes =>
+    [
         new StjObject { ["id"] = null, ["expression"] = "true", ["truthy"] = true },
         new StjObject { ["id"] = "", ["expression"] = "true", ["truthy"] = true },
         new StjObject { ["id"] = "case", ["expression"] = null, ["truthy"] = true },
         new StjObject { ["id"] = "case", ["expression"] = 1, ["truthy"] = true },
         new StjObject { ["id"] = "case", ["expression"] = "true", ["truthy"] = true, ["extra"] = 1 },
-    };
+    ];
 
     [Fact]
     public void CaseIdsMustBeUnique()
@@ -169,19 +175,19 @@ public sealed class ConformanceTests
     [Fact]
     public void AdapterDistinguishesMissingAndExplicitNullModels()
     {
-        Assert.IsType<Dictionary<string, object?>>(ParseModel(new StjObject()));
+        Assert.IsType<Dictionary<string, object?>>(ParseModel([]));
         Assert.Null(ParseModel(new StjObject { ["model"] = null }));
     }
 
-    private static IReadOnlyDictionary<string, StjObject> LoadCases()
+    private static Dictionary<string, StjObject> LoadCases()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "conformance", "spec", "v1", "cases.json");
-        JsonNode? root = JsonNode.Parse(File.ReadAllText(path));
+        var root = JsonNode.Parse(File.ReadAllText(path));
         StjObject document = ValidateDocument(root);
         var caseNodes = (JsonArray)document["cases"]!;
 
         var cases = new List<StjObject>(caseNodes.Count);
-        foreach (var node in caseNodes)
+        foreach (JsonNode? node in caseNodes)
         {
             if (node is not StjObject item)
             {
@@ -207,11 +213,13 @@ public sealed class ConformanceTests
             throw new InvalidDataException("Unknown property in conformance corpus.");
         }
 
-        if (document.ContainsKey("$comment") &&
-            (document["$comment"] is not JsonArray comments ||
-             comments.Any(comment => comment?.GetValueKind() != JsonValueKind.String)))
+        if (document.ContainsKey("$comment"))
         {
-            throw new InvalidDataException("Corpus comment must be an array of strings.");
+            if (document["$comment"] is not JsonArray comments ||
+                 comments.Any(comment => comment?.GetValueKind() != JsonValueKind.String))
+            {
+                throw new InvalidDataException("Corpus comment must be an array of strings.");
+            }
         }
 
         return document;
@@ -220,7 +228,7 @@ public sealed class ConformanceTests
     private static void ValidateCases(IEnumerable<StjObject> cases)
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in cases)
+        foreach (StjObject item in cases)
         {
             ValidateCase(item);
             string id = item["id"]!.GetValue<string>();

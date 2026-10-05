@@ -99,14 +99,16 @@ internal static class ExpressionCompiler
                 var baseValue = arguments[0](model);
                 var exponent = arguments[1](model);
                 return ExpressionOperations.NumericResult(Math.Pow(baseValue.ToNumber(true), exponent.ToNumber(true)));
-            },
+            }
+            ,
             "clamp" => model =>
             {
                 var value = arguments[0](model);
                 var minimum = arguments[1](model);
                 var maximum = arguments[2](model);
                 return ExpressionOperations.NumericResult(Math.Min(Math.Max(value.ToNumber(true), minimum.ToNumber(true)), maximum.ToNumber(true)));
-            },
+            }
+            ,
             "add" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Add, "add"),
             "sub" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Subtract, "sub"),
             "mul" => model => ExpressionOperations.EvaluateNumeric(arguments, model, NumericOperation.Multiply, "mul"),
