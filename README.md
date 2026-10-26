@@ -94,7 +94,13 @@ Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached
 
 ## Errors
 
-Parse-time failures (malformed syntax, unknown operators, non-finite literals, and invalid constant regex patterns) throw `ExpressionParseException`. Failures while evaluating a parsed expression (invalid numeric values, division by zero, invalid references, cyclic lists, and invalid model-supplied regex patterns) throw `ExpressionEvaluationException`, which extends `InvalidOperationException`. Passing a value that is neither a string nor a Boolean throws an `ArgumentException`.
+Parse-time failures (malformed syntax, unknown operators, non-finite literals, invalid references, and invalid constant regex patterns) throw `ExpressionParseException`. Failures while evaluating a parsed expression (invalid numeric values, division by zero, cyclic lists, and invalid model-supplied regex patterns) throw `ExpressionEvaluationException`, which extends `InvalidOperationException`. Passing a value that is neither a string nor a Boolean throws an `ArgumentException`.
+
+## Version 2.0.0 compatibility notes
+
+This release intentionally adopts the portable v1 equality, comparison, and whitespace rules. Blank strings are not numeric, collections do not coerce to scalars, and objects compare structurally. Boolean operands are not ordered by `gt` or `lt`. Unicode White_Space is recognized consistently, while U+FEFF is preserved by `trim` and rejected at expression boundaries.
+
+Numeric operators require finite numbers or finite decimal/exponent strings, recursively expand list arguments where supported, and reject nonfinite results. Cache limits must be positive; use `DisableCaches()` to disable caching. Parse and evaluation failures use the exception types described above. Review existing expressions and error handling when upgrading.
 
 ## Regex semantics
 
