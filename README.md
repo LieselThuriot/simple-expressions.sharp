@@ -37,7 +37,7 @@ The library targets `netstandard2.0`.
 
 The interactive playground is available at [simple-expressions.liesel.dev](https://simple-expressions.liesel.dev/). It demonstrates the TypeScript reference implementation; the C# port follows the shared grammar with documented CLR and .NET differences.
 
-To run the C# console sample from this repository:
+To run the C# console sample from a repository checkout, install the .NET 10 SDK and run this command from the repository root:
 
 ```bash
 dotnet run --project Simple.Expressions.Sharp.Sample
@@ -94,7 +94,7 @@ Parsed evaluators and expressions returned by `SimpleExpressions.Get` are cached
 
 ## Errors
 
-Parse-time failures (malformed syntax, unknown operators, non-finite literals, invalid references, and invalid constant regex patterns) throw `ExpressionParseException`. Failures while evaluating a parsed expression (invalid numeric values, division by zero, cyclic lists, and invalid model-supplied regex patterns) throw `ExpressionEvaluationException`, which extends `InvalidOperationException`. Passing a value that is neither a string nor a Boolean throws an `ArgumentException`.
+Parse-time failures (malformed syntax, unknown operators, non-finite literals, invalid references, and invalid constant regex patterns) throw `ExpressionParseException`. Failures while evaluating a parsed expression (invalid numeric values, division by zero, cyclic lists, and invalid model-supplied regex patterns) throw `ExpressionEvaluationException`, which extends `InvalidOperationException`. `ParseExpression` accepts a string; `ExecuteExpression`, `Get`, and the `SimpleExpression` constructor have string and Boolean overloads. Other expression argument types are rejected at compile time in statically typed C# calls.
 
 ## Version 2.0.0 compatibility notes
 
@@ -112,4 +112,27 @@ Expressions and regex patterns are trusted input. Regex evaluation can be vulner
 
 ## Conformance
 
-This package supports conformance specification v1. The pinned corpus is documented in `CONFORMANCE.md` and initialized at `conformance`.
+This package supports conformance specification v1. See [CONFORMANCE.md](https://github.com/LieselThuriot/simple-expressions.sharp/blob/main/CONFORMANCE.md) for compatibility details. The repository pins the corpus at `conformance/`.
+
+## Development
+
+Use the .NET 10 SDK to work on this repository: the tests and sample target `net10.0`, while the published library targets `netstandard2.0`.
+
+From the root of a repository checkout, initialize the shared test fixtures and run the tests:
+
+```bash
+git submodule update --init --recursive
+dotnet test Simple.Expressions.Sharp.Tests/Simple.Expressions.Sharp.Tests.csproj
+```
+
+The .NET CLI restores dependencies automatically.
+
+## Packaging
+
+From the repository root, build the release packages:
+
+```bash
+dotnet pack Simple.Expressions.Sharp/Simple.Expressions.Sharp.csproj --configuration Release
+```
+
+The project writes `simple-expressions.2.0.0.nupkg` and `simple-expressions.2.0.0.snupkg` to `nupkg/`. The `.nupkg` contains the library and package README; the `.snupkg` contains debugging symbols. The version comes from `VersionPrefix` in the library project. Packing builds the library but does not run tests or publish the packages.
